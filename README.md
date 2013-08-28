@@ -10,7 +10,7 @@ Apps using manifest in version 1. For these kind of applications, the content se
 can be [relaxed](http://developer.chrome.com/extensions/contentSecurityPolicy.html#relaxing).
 
 However, using `eval()` in new Chrome Apps would require putting the page using the script in a
-sandbox, which in turns out to be very tricky, as sandboxed page doesn't have access to IndexedDB.
+sandbox, which in turn renders PouchDB unusable, as sandboxed page doesn't have access to IndexedDB.
 Using this plugin is effectively the only way to use PouchDB in a packaged app without putting the
 original MapReduce plugin in a sandbox and setting a wrapper around it to communicate with the
 rest of library via `window.postMessage()` calls.
