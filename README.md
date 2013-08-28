@@ -1,13 +1,13 @@
 pouchdb.mapreduce.noeval
 ========================
 
-MapReduce plugin for (PouchDB)[https://github.com/daleharvey] that does not use dynamic evaluation
+MapReduce plugin for [PouchDB](https://github.com/daleharvey) that does not use dynamic evaluation
 of JavaScript (`eval()` or `new Function()`). Thus, it allows using PouchDB in environments with
 strict policy against dynamic script evaluation, such as Chrome Packaged Apps or Adobe AIR runtime.
 
 Note that this kind of treatment is not required for Chrome Extensions or (now deprecated) Chrome
 Apps using manifest in version 1. For these kind of applications, the content security policy
-can be (relaxed)[http://developer.chrome.com/extensions/contentSecurityPolicy.html#relaxing].
+can be [relaxed](http://developer.chrome.com/extensions/contentSecurityPolicy.html#relaxing).
 
 However, using `eval()` in new Chrome Apps would require putting the page using the script in a
 sandbox, which in turns out to be very tricky, as sandboxed page doesn't have access to IndexedDB.
