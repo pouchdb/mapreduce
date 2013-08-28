@@ -1,0 +1,10 @@
+{
+  "name": "pouchdb.mapreduce.noeval",
+  "version": "0.1.0",
+  "main": "pouchdb.mapreduce.noeval.js",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "components"
+  ]
+}
