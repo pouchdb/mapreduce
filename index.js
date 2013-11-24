@@ -2,10 +2,7 @@
 
 "use strict";
 
-var pouchCollate;
-if (typeof module !== 'undefined' && module.exports) {
-  pouchCollate = require('pouchdb-collate');
-}
+var pouchCollate = require('pouchdb-collate');
 
 // This is the first implementation of a basic plugin, we register the
 // plugin object with pouch and it is mixin'd to each database created
@@ -19,8 +16,10 @@ if (typeof module !== 'undefined' && module.exports) {
 // and storing the result of the map function (possibly using the upcoming
 // extracted adapter functions)
 
-var MapReduce = function(db) {
-
+function MapReduce(db) {
+  if(!(this instanceof MapReduce)){
+    return new MapReduce(db);
+  }
   function viewQuery(fun, options) {
     if (!options.complete) {
       return;
@@ -75,7 +74,7 @@ var MapReduce = function(db) {
     var num_started= 0;
     var completed= false;
 
-    var emit = function(key, val) {
+    function emit(key, val) {
       var viewRow = {
         id: current.doc._id,
         key: key,
@@ -118,7 +117,7 @@ var MapReduce = function(db) {
     }
 
     //only proceed once all documents are mapped and joined
-    var checkComplete= function(){
+    function checkComplete(){
       if (completed && results.length == num_started){
         results.sort(function(a, b) {
           return pouchCollate(a.key, b.key);
@@ -187,36 +186,13 @@ var MapReduce = function(db) {
     // of parameters.
     // If reduce=false then the results are that of only the map function
     // not the final result of map and reduce.
-    if (typeof opts.reduce !== 'undefined') {
-      params.push('reduce=' + opts.reduce);
+    function optsFunction(param){
+      if (typeof opts[param] !== 'undefined') {
+        params.push(param + '=' + opts[param]);
+      }
     }
-    if (typeof opts.include_docs !== 'undefined') {
-      params.push('include_docs=' + opts.include_docs);
-    }
-    if (typeof opts.limit !== 'undefined') {
-      params.push('limit=' + opts.limit);
-    }
-    if (typeof opts.descending !== 'undefined') {
-      params.push('descending=' + opts.descending);
-    }
-    if (typeof opts.startkey !== 'undefined') {
-      params.push('startkey=' + encodeURIComponent(JSON.stringify(opts.startkey)));
-    }
-    if (typeof opts.endkey !== 'undefined') {
-      params.push('endkey=' + encodeURIComponent(JSON.stringify(opts.endkey)));
-    }
-    if (typeof opts.key !== 'undefined') {
-      params.push('key=' + encodeURIComponent(JSON.stringify(opts.key)));
-    }
-    if (typeof opts.group !== 'undefined') {
-      params.push('group=' + opts.group);
-    }
-    if (typeof opts.group_level !== 'undefined') {
-      params.push('group_level=' + opts.group_level);
-    }
-    if (typeof opts.skip !== 'undefined') {
-      params.push('skip=' + opts.skip);
-    }
+    var optTypes = ['reduce','include_docs','limit','descending','startkey','endkey','key','group','group_level','skip'];
+    optTypes.forEach(optsFunction);
 
     // If keys are supplied, issue a POST request to circumvent GET query string limits
     // see http://wiki.apache.org/couchdb/HTTP_view_API#Querying_Options
@@ -255,7 +231,7 @@ var MapReduce = function(db) {
     }, callback);
   }
 
-  function query(fun, opts, callback) {
+  this.query = function(fun, opts, callback) {
     if (typeof opts === 'function') {
       callback = opts;
       opts = {};
@@ -299,7 +275,6 @@ var MapReduce = function(db) {
     });
   }
 
-  return {'query': query};
 };
 
 // Deletion is a noop since we dont store the results of the view
