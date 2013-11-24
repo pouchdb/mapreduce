@@ -1,0 +1,25 @@
+{
+  "name": "pouchdb-mapreduce",
+  "version": "0.0.0",
+  "description": "Map Reduce =====",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/pouchdb/mapreduce.git"
+  },
+  "keywords": [
+    "pouch",
+    "pouchdb",
+    "mapreduce",
+    "couch",
+    "couchdb"
+  ],
+  "author": "",
+  "license": "Apache",
+  "bugs": {
+    "url": "https://github.com/pouchdb/mapreduce/issues"
+  },
+  "dependencies": {
+    "pouchdb-collate": "0.0.0"
+  }
+}
