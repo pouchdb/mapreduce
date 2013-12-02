@@ -1,6 +1,5 @@
 var Pouch = require('pouchdb');
 var Mapreduce = require('../');
-Pouch.plugin('mapreduce',Mapreduce);
 var should = require('chai').should();
 beforeEach(function(done){
   Pouch('testdb',function(err,d){
