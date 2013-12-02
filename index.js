@@ -16,6 +16,20 @@ var pouchCollate = require('pouchdb-collate');
 // and storing the result of the map function (possibly using the upcoming
 // extracted adapter functions)
 
+
+
+// This is the first implementation of a basic plugin, we register the
+// plugin object with pouch and it is mixin'd to each database created
+// (regardless of adapter), adapters can override plugins by providing
+// their own implementation. functions on the plugin object that start
+// with _ are reserved function that are called by pouchdb for special
+// notifications.
+
+// If we wanted to store incremental views we can do it here by listening
+// to the changes feed (keeping track of our last update_seq between page loads)
+// and storing the result of the map function (possibly using the upcoming
+// extracted adapter functions)
+
 function MapReduce(db) {
   if(!(this instanceof MapReduce)){
     return new MapReduce(db);
@@ -34,15 +48,15 @@ function MapReduce(db) {
     }
 
     function sum(values) {
-      return values.reduce(function(a, b) { return a + b; }, 0);
+      return values.reduce(function (a, b) { return a + b; }, 0);
     }
 
     var builtInReduce = {
-      "_sum": function(keys, values){
+      "_sum": function (keys, values){
         return sum(values);
       },
 
-      "_count": function(keys, values, rereduce){
+      "_count": function (keys, values, rereduce){
         if (rereduce){
           return sum(values);
         } else {
@@ -50,13 +64,13 @@ function MapReduce(db) {
         }
       },
 
-      "_stats": function(keys, values, rereduce) {
+      "_stats": function (keys, values, rereduce) {
         return {
           'sum': sum(values),
           'min': Math.min.apply(null, values),
           'max': Math.max.apply(null, values),
           'count': values.length,
-          'sumsqr': (function(){
+          'sumsqr': (function () {
             var _sumsqr = 0;
             for(var idx in values) {
               if (typeof values[idx] === 'number') {
@@ -90,7 +104,7 @@ function MapReduce(db) {
         //in this special case, join on _id (issue #106)
         if (val && typeof val === 'object' && val._id){
           db.get(val._id,
-              function(_, joined_doc){
+              function (_, joined_doc){
                 if (joined_doc) {
                   viewRow.doc = joined_doc;
                 }
@@ -117,9 +131,9 @@ function MapReduce(db) {
     }
 
     //only proceed once all documents are mapped and joined
-    function checkComplete(){
+    function checkComplete() {
       if (completed && results.length == num_started){
-        results.sort(function(a, b) {
+        results.sort(function (a, b) {
           return pouchCollate(a.key, b.key);
         });
         if (options.descending) {
@@ -135,7 +149,7 @@ function MapReduce(db) {
         }
 
         var groups = [];
-        results.forEach(function(e) {
+        results.forEach(function (e) {
           var last = groups[groups.length-1] || null;
           if (last && pouchCollate(last.key[0][0], e.key) === 0) {
             last.key.push([e.key, e.id]);
@@ -144,7 +158,7 @@ function MapReduce(db) {
           }
           groups.push({key: [[e.key, e.id]], value: [e.value]});
         });
-        groups.forEach(function(e) {
+        groups.forEach(function (e) {
           e.value = fun.reduce(e.key, e.value);
           e.value = (typeof e.value === 'undefined') ? null : e.value;
           e.key = e.key[0][0];
@@ -162,13 +176,13 @@ function MapReduce(db) {
     db.changes({
       conflicts: true,
       include_docs: true,
-      onChange: function(doc) {
+      onChange: function (doc) {
         if (!('deleted' in doc)) {
           current = {doc: doc.doc};
           fun.map.call(this, doc.doc);
         }
       },
-      complete: function() {
+      complete: function () {
         completed= true;
         checkComplete();
       }
@@ -186,13 +200,36 @@ function MapReduce(db) {
     // of parameters.
     // If reduce=false then the results are that of only the map function
     // not the final result of map and reduce.
-    function optsFunction(param){
-      if (typeof opts[param] !== 'undefined') {
-        params.push(param + '=' + opts[param]);
-      }
+    if (typeof opts.reduce !== 'undefined') {
+      params.push('reduce=' + opts.reduce);
     }
-    var optTypes = ['reduce','include_docs','limit','descending','startkey','endkey','key','group','group_level','skip'];
-    optTypes.forEach(optsFunction);
+    if (typeof opts.include_docs !== 'undefined') {
+      params.push('include_docs=' + opts.include_docs);
+    }
+    if (typeof opts.limit !== 'undefined') {
+      params.push('limit=' + opts.limit);
+    }
+    if (typeof opts.descending !== 'undefined') {
+      params.push('descending=' + opts.descending);
+    }
+    if (typeof opts.startkey !== 'undefined') {
+      params.push('startkey=' + encodeURIComponent(JSON.stringify(opts.startkey)));
+    }
+    if (typeof opts.endkey !== 'undefined') {
+      params.push('endkey=' + encodeURIComponent(JSON.stringify(opts.endkey)));
+    }
+    if (typeof opts.key !== 'undefined') {
+      params.push('key=' + encodeURIComponent(JSON.stringify(opts.key)));
+    }
+    if (typeof opts.group !== 'undefined') {
+      params.push('group=' + opts.group);
+    }
+    if (typeof opts.group_level !== 'undefined') {
+      params.push('group_level=' + opts.group_level);
+    }
+    if (typeof opts.skip !== 'undefined') {
+      params.push('skip=' + opts.skip);
+    }
 
     // If keys are supplied, issue a POST request to circumvent GET query string limits
     // see http://wiki.apache.org/couchdb/HTTP_view_API#Querying_Options
@@ -217,7 +254,7 @@ function MapReduce(db) {
     }
 
     // We are using a temporary view, terrible for performance but good for testing
-    var queryObject = JSON.parse(JSON.stringify(fun, function(key, val) {
+    var queryObject = JSON.parse(JSON.stringify(fun, function (key, val) {
       if (typeof val === 'function') {
         return val + ''; // implicitly `toString` it
       }
@@ -242,10 +279,10 @@ function MapReduce(db) {
     }
 
     if (db.type() === 'http') {
-	  if (typeof fun === 'function'){
-	    return httpQuery({map: fun}, opts, callback);
-	  }
-	  return httpQuery(fun, opts, callback);
+    if (typeof fun === 'function'){
+      return httpQuery({map: fun}, opts, callback);
+    }
+    return httpQuery(fun, opts, callback);
     }
 
     if (typeof fun === 'object') {
@@ -257,7 +294,7 @@ function MapReduce(db) {
     }
 
     var parts = fun.split('/');
-    db.get('_design/' + parts[0], function(err, doc) {
+    db.get('_design/' + parts[0], function (err, doc) {
       if (err) {
         if (callback) callback(err);
         return;
@@ -278,6 +315,5 @@ function MapReduce(db) {
 };
 
 // Deletion is a noop since we dont store the results of the view
-MapReduce._delete = function() { };
-
+MapReduce._delete = function () { };
 module.exports = MapReduce;
