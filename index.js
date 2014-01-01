@@ -85,7 +85,7 @@ function MapReduce(db) {
 
       if (options.startkey && pouchCollate(key, options.startkey) < 0) return;
       if (options.endkey && pouchCollate(key, options.endkey) > 0) return;
-      if (options.key && pouchCollate(key, options.key) !== 0) return;
+      if (typeof options.key !== 'undefined' && pouchCollate(key, options.key) !== 0) return;
 
       num_started++;
       if (options.include_docs) {
