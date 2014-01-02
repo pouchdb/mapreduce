@@ -1,6 +1,6 @@
 {
   "name": "pouchdb-mapreduce",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Map Reduce =====",
   "main": "index.js",
   "repository": {
@@ -24,7 +24,7 @@
     "url": "https://github.com/pouchdb/mapreduce/issues"
   },
   "dependencies": {
-    "pouchdb-collate": "0.1.0"
+    "pouchdb-collate": "~0.2.0"
   },
   "devDependencies": {
     "chai": "~1.8.1",
