@@ -16,12 +16,125 @@ var pouchCollate = require('pouchdb-collate');
 // and storing the result of the map function (possibly using the upcoming
 // extracted adapter functions)
 
-
-
 function MapReduce(db) {
   if(!(this instanceof MapReduce)){
     return new MapReduce(db);
   }
+
+  function normalize(key) {
+    // couch considers null === undefined for the purposes of mapreduce indexes
+    return typeof key === 'undefined' ? null : key;
+  }
+
+  function createKeysLookup(keys) {
+    // creates a lookup map for the given keys, so that doing
+    // query() with keys doesn't become an O(n * m) operation
+    // lookup values are typically integer indexes, but may
+    // map to a list of integers, since keys can be duplicated
+    var lookup = {};
+
+    for (var i = 0, len = keys.length; i < len; i++) {
+      var key = normalize(keys[i]);
+      var val = lookup[key];
+      if (typeof val === 'undefined') {
+        lookup[key] = i;
+      } else if (typeof val === 'number') {
+        lookup[key] = [val, i];
+      } else { // array
+        val.push(i);
+      }
+    }
+
+    return lookup;
+  }
+
+  function mapUsingKeys(inputResults, keys, keysLookup) {
+    // create a new results array from the given array,
+    // ensuring that the following conditions are respected:
+    // 1. docs are ordered by key, then doc id
+    // 2. docs can appear >1 time in the list, if their key is specified >1 time
+    // 3. keys can be unknown, in which case there's just a hole in the returned array
+
+    var prelimResults = new Array(keys.length);
+
+    function addAtIndex(idx, result) {
+      var val = prelimResults[idx];
+      if (typeof val === 'undefined') {
+        prelimResults[idx] = result;
+      } else if (!Array.isArray(val)) {
+        // same key for multiple docs, need to preserve document order, so create array
+        prelimResults[idx] = [val, result];
+      } else { // existing array
+        val.push(result);
+      }
+    }
+
+    inputResults.forEach(function(result) {
+      var idx = keysLookup[normalize(result.key)];
+      if (typeof idx === 'number') {
+        addAtIndex(idx, result);
+      } else { // array of indices
+        idx.forEach(function(subIdx) {
+          addAtIndex(subIdx, result);
+        });
+      }
+    });
+
+    function sortById(a, b) {
+      return pouchCollate(a.id, b.id);
+    }
+
+    // flatten the array, remove nulls, sort by doc ids
+    var outputResults = [];
+    prelimResults.forEach(function(result) {
+      if (typeof result !== 'undefined') {
+        if (Array.isArray(result)) {
+          outputResults = outputResults.concat(result.sort(sortById));
+        } else { // single result
+          outputResults.push(result);
+        }
+      }
+    });
+
+    return outputResults;
+  }
+
+  function sum(values) {
+    return values.reduce(function (a, b) { return a + b; }, 0);
+  }
+
+  var builtInReduce = {
+    "_sum": function (keys, values){
+      return sum(values);
+    },
+
+    "_count": function (keys, values, rereduce){
+      if (rereduce){
+        return sum(values);
+      } else {
+        return values.length;
+      }
+    },
+
+    "_stats": function (keys, values, rereduce) {
+      return {
+        'sum': sum(values),
+        'min': Math.min.apply(null, values),
+        'max': Math.max.apply(null, values),
+        'count': values.length,
+        'sumsqr': (function () {
+          var _sumsqr = 0;
+          for(var idx in values) {
+            if (typeof values[idx] === 'number') {
+              _sumsqr += values[idx] * values[idx];
+            }
+          }
+          return _sumsqr;
+        })()
+      };
+    }
+  };
+
   function viewQuery(fun, options) {
     if (!options.complete) {
       return;
@@ -35,46 +148,11 @@ function MapReduce(db) {
       options.reduce = false;
     }
 
-    function sum(values) {
-      return values.reduce(function (a, b) { return a + b; }, 0);
-    }
-
-    var builtInReduce = {
-      "_sum": function (keys, values){
-        return sum(values);
-      },
-
-      "_count": function (keys, values, rereduce){
-        if (rereduce){
-          return sum(values);
-        } else {
-          return values.length;
-        }
-      },
-
-      "_stats": function (keys, values, rereduce) {
-        return {
-          'sum': sum(values),
-          'min': Math.min.apply(null, values),
-          'max': Math.max.apply(null, values),
-          'count': values.length,
-          'sumsqr': (function () {
-            var _sumsqr = 0;
-            for(var idx in values) {
-              if (typeof values[idx] === 'number') {
-              _sumsqr += values[idx] * values[idx];
-              }
-            }
-            return _sumsqr;
-          })()
-        };
-      }
-    };
-
     var results = [];
-    var current = null;
-    var num_started= 0;
-    var completed= false;
+    var current;
+    var num_started = 0;
+    var completed = false;
+    var keysLookup;
 
     function emit(key, val) {
       var viewRow = {
@@ -83,9 +161,15 @@ function MapReduce(db) {
         value: val
       };
 
-      if (options.startkey && pouchCollate(key, options.startkey) < 0) return;
-      if (options.endkey && pouchCollate(key, options.endkey) > 0) return;
+      if (typeof options.startkey !== 'undefined' && pouchCollate(key, options.startkey) < 0) return;
+      if (typeof options.endkey !== 'undefined' && pouchCollate(key, options.endkey) > 0) return;
       if (typeof options.key !== 'undefined' && pouchCollate(key, options.key) !== 0) return;
+      if (typeof options.keys !== 'undefined') {
+        keysLookup = keysLookup || createKeysLookup(options.keys);
+        if (typeof keysLookup[normalize(key)] === 'undefined') {
+          return;
+        }
+      }
 
       num_started++;
       if (options.include_docs) {
@@ -121,9 +205,15 @@ function MapReduce(db) {
     //only proceed once all documents are mapped and joined
     function checkComplete() {
       if (completed && results.length == num_started){
-        results.sort(function (a, b) {
-          return pouchCollate(a.key, b.key);
-        });
+
+        if (typeof options.keys !== 'undefined' && results.length) { // user supplied a keys param, sort by keys
+          keysLookup = keysLookup || createKeysLookup(options.keys);
+          results = mapUsingKeys(results, options.keys, keysLookup);
+        } else { // normal sorting
+          results.sort(function (a, b) {
+            return pouchCollate(a.key, b.key);
+          });
+        }
         if (options.descending) {
           results.reverse();
         }
@@ -177,6 +267,17 @@ function MapReduce(db) {
     });
   }
 
+  function addHttpParam(paramName, opts, params, asJson) {
+    // add an http param from opts to params, optionally json-encoded
+    var val = opts[paramName];
+    if (typeof val !== 'undefined') {
+      if (asJson) {
+        val = encodeURIComponent(JSON.stringify(val));
+      }
+      params.push(paramName + '=' + val);
+    }
+  }
+
   function httpQuery(fun, opts, callback) {
 
     // List of parameters to add to the PUT request
@@ -188,42 +289,26 @@ function MapReduce(db) {
     // of parameters.
     // If reduce=false then the results are that of only the map function
     // not the final result of map and reduce.
-    if (typeof opts.reduce !== 'undefined') {
-      params.push('reduce=' + opts.reduce);
-    }
-    if (typeof opts.include_docs !== 'undefined') {
-      params.push('include_docs=' + opts.include_docs);
-    }
-    if (typeof opts.limit !== 'undefined') {
-      params.push('limit=' + opts.limit);
-    }
-    if (typeof opts.descending !== 'undefined') {
-      params.push('descending=' + opts.descending);
-    }
-    if (typeof opts.startkey !== 'undefined') {
-      params.push('startkey=' + encodeURIComponent(JSON.stringify(opts.startkey)));
-    }
-    if (typeof opts.endkey !== 'undefined') {
-      params.push('endkey=' + encodeURIComponent(JSON.stringify(opts.endkey)));
-    }
-    if (typeof opts.key !== 'undefined') {
-      params.push('key=' + encodeURIComponent(JSON.stringify(opts.key)));
-    }
-    if (typeof opts.group !== 'undefined') {
-      params.push('group=' + opts.group);
-    }
-    if (typeof opts.group_level !== 'undefined') {
-      params.push('group_level=' + opts.group_level);
-    }
-    if (typeof opts.skip !== 'undefined') {
-      params.push('skip=' + opts.skip);
-    }
+    addHttpParam('reduce', opts, params);
+    addHttpParam('include_docs', opts, params);
+    addHttpParam('limit', opts, params);
+    addHttpParam('descending', opts, params);
+    addHttpParam('group', opts, params);
+    addHttpParam('group_level', opts, params);
+    addHttpParam('skip', opts, params);
+    addHttpParam('startkey', opts, params, true);
+    addHttpParam('endkey', opts, params, true);
+    addHttpParam('key', opts, params, true);
 
     // If keys are supplied, issue a POST request to circumvent GET query string limits
     // see http://wiki.apache.org/couchdb/HTTP_view_API#Querying_Options
     if (typeof opts.keys !== 'undefined') {
       method = 'POST';
-      body = JSON.stringify({keys:opts.keys});
+      if (typeof fun === 'string') {
+        body = JSON.stringify({keys:opts.keys});
+      } else { // fun is {map : mapfun}, so append to this
+        fun.keys = opts.keys;
+      }
     }
 
     // Format the list of parameters into a valid URI query string
