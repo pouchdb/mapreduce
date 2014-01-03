@@ -1,6 +1,6 @@
 {
   "name": "pouchdb-mapreduce",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Map Reduce =====",
   "main": "index.js",
   "repository": {
@@ -30,7 +30,7 @@
     "chai": "~1.8.1",
     "mocha": "~1.14.0",
     "istanbul": "~0.1.45",
-    "pouchdb": "0.0.16",
+    "pouchdb": "~1.1.0",
     "browserify": "~2.36.0"
   }
 }
