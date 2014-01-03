@@ -427,5 +427,233 @@ describe('views',function(){
       });
     });
   });
+
+  it('Map documents on 0/null/undefined/empty string', function(done) {
+    Pouch('testdb', function(err, db) {
+      var docs = [
+        {_id : 'doc0', num : 0},
+        {_id : 'doc1', num : 1},
+        {_id : 'doc2' /* num is undefined */},
+        {_id : 'doc3', num : null},
+        {_id : 'doc4', num : ''}
+      ];
+      db.bulkDocs({docs: docs}, function(err){
+        var mapFunction =function(doc){emit(doc.num, null);};
+
+        db.query(mapFunction, {key : 0, include_docs : true}, function(err, data){
+          data.rows.should.have.length( 1);
+          data.rows[0].doc._id.should.equal( 'doc0');
+
+          db.query(mapFunction, {key : null, include_docs : true}, function(err, data){
+            data.rows.should.have.length( 2);
+            data.rows[0].doc._id.should.equal( 'doc2');
+            data.rows[1].doc._id.should.equal( 'doc3');
+
+            db.query(mapFunction, {key : '', include_docs : true}, function(err, data){
+              data.rows.should.have.length( 1);
+              data.rows[0].doc._id.should.equal( 'doc4');
+
+              db.query(mapFunction, {key : undefined, include_docs : true}, function(err, data){
+                data.rows.should.have.length( 5); // everything
+                done();
+              });
+            });
+          });
+        });
+      });
+    });
+  });
+
+  it('Testing query with keys', function(done) {
+    Pouch('testdb', function(err, db) {
+      db.bulkDocs({
+        docs : [
+          {_id : 'doc_0', field : 0},
+          {_id : 'doc_1', field : 1},
+          {_id : 'doc_2', field : 2},
+          {_id : 'doc_empty', field : ''},
+          {_id : 'doc_null', field : null},
+          {_id : 'doc_undefined' /* field undefined */},
+          {_id : 'doc_foo', field : 'foo'}
+        ]
+      }, function(err) {
+        var mapFunction =function(doc){emit(doc.field, null);};
+        var opts = {include_docs : true};
+        db.query(mapFunction, opts, function(err, data) {
+          data.rows.should.have.length(7, 'returns all docs');
+
+          opts.keys = [];
+          db.query(mapFunction, opts, function(err, data) {
+            // no docs
+            data.rows.should.have.length(0, 'returns 0 docs');
+
+            opts.keys = [0];
+            db.query(mapFunction, opts, function(err, data) {
+              data.rows.should.have.length(1, 'returns one doc');
+              data.rows[0].doc._id.should.equal('doc_0');
+
+              opts.keys = [2, 'foo', 1 , 0, null, ''];
+              db.query(mapFunction, opts, function(err, data) {
+                // check that the returned ordering fits opts.keys
+                data.rows.should.have.length(7, 'returns 7 docs in correct order');
+                data.rows[0].doc._id.should.equal('doc_2');
+                data.rows[1].doc._id.should.equal('doc_foo');
+                data.rows[2].doc._id.should.equal('doc_1');
+                data.rows[3].doc._id.should.equal('doc_0');
+                data.rows[4].doc._id.should.equal('doc_null');
+                data.rows[5].doc._id.should.equal('doc_undefined');
+                data.rows[6].doc._id.should.equal('doc_empty');
+
+                opts.keys = [3, 1, 4, 2];
+                db.query(mapFunction, opts, function(err, data) {
+                  // nonexistent keys just give us holes in the list
+                  data.rows.should.have.length(2, 'returns 2 non-empty docs');
+                  data.rows[0].key.should.equal(1);
+                  data.rows[0].doc._id.should.equal('doc_1');
+                  data.rows[1].key.should.equal(2);
+                  data.rows[1].doc._id.should.equal('doc_2');
+
+                  opts.keys = [2, 1, 2, 0, 2, 1];
+                  db.query(mapFunction, opts, function(err, data) {
+                    // with duplicates, we return multiple docs
+                    data.rows.should.have.length(6, 'returns 6 docs with duplicates');
+                    data.rows[0].doc._id.should.equal('doc_2');
+                    data.rows[1].doc._id.should.equal('doc_1');
+                    data.rows[2].doc._id.should.equal('doc_2');
+                    data.rows[3].doc._id.should.equal('doc_0');
+                    data.rows[4].doc._id.should.equal('doc_2');
+                    data.rows[5].doc._id.should.equal('doc_1');
+
+                    opts.keys = [2, 1, 2, 3, 2];
+                    db.query(mapFunction, opts, function(err, data) {
+                      // duplicates and unknowns at the same time, for maximum crazy
+                      data.rows.should.have.length(4, 'returns 2 docs with duplicates/unknowns');
+                      data.rows[0].doc._id.should.equal('doc_2');
+                      data.rows[1].doc._id.should.equal('doc_1');
+                      data.rows[2].doc._id.should.equal('doc_2');
+                      data.rows[3].doc._id.should.equal('doc_2');
+
+                      opts.keys = [3];
+                      db.query(mapFunction, opts, function(err, data) {
+                        data.rows.should.have.length(0, 'returns 0 doc due to unknown key');
+
+                        opts.include_docs = false;
+                        opts.keys = [3, 2];
+                        db.query(mapFunction, opts, function(err, data) {
+                          data.rows.should.have.length(1, 'returns 1 doc due to unknown key');
+                          data.rows[0].id.should.equal('doc_2');
+                          should.not.exist(data.rows[0].doc, 'no doc, since include_docs=false');
+                          done();
+                        });
+                      });
+                    });
+                  });
+                });
+              });
+            });
+          });
+        });
+      })
+    });
+  });
+
+  it('Testing query with multiple keys, multiple docs', function(done) {
+    Pouch('testdb', function(err, db) {
+      db.bulkDocs({
+        docs : [
+          {_id : '0', field1 : 0},
+          {_id : '1a', field1 : 1},
+          {_id : '1b', field1 : 1},
+          {_id : '1c', field1 : 1},
+          {_id : '2+3', field1 : 2, field2: 3},
+          {_id : '4+5', field1 : 4, field2: 5},
+          {_id : '3+5', field1 : 3, field2: 5},
+          {_id : '3+4', field1 : 3, field2: 4}
+        ]
+      }, function(err) {
+        var mapFunction = function(doc){
+          emit(doc.field1, null);
+          emit(doc.field2, null);
+        };
+        var opts = {keys : [0, 1, 2]};
+
+        db.query(mapFunction, opts, function(err, data) {
+          data.rows.should.have.length(5);
+          data.rows[0].id.should.equal('0');
+          data.rows[1].id.should.equal('1a');
+          data.rows[2].id.should.equal('1b');
+          data.rows[3].id.should.equal('1c');
+          data.rows[4].id.should.equal('2+3');
+
+          opts.keys = [3, 5, 4, 3];
+
+          db.query(mapFunction, opts, function(err, data) {
+            // ordered by m/r key, then doc id
+            data.rows.should.have.length(10);
+            // 3
+            data.rows[0].id.should.equal('2+3');
+            data.rows[1].id.should.equal('3+4');
+            data.rows[2].id.should.equal('3+5');
+            // 5
+            data.rows[3].id.should.equal('3+5');
+            data.rows[4].id.should.equal('4+5');
+            // 4
+            data.rows[5].id.should.equal('3+4');
+            data.rows[6].id.should.equal('4+5');
+            // 3
+            data.rows[7].id.should.equal('2+3');
+            data.rows[8].id.should.equal('3+4');
+            data.rows[9].id.should.equal('3+5');
+            done();
+          });
+        });
+
+      });
+    });
+  });
+
+  it('Testing empty startkeys and endkeys', function(done) {
+    Pouch('testdb', function(err, db) {
+      db.bulkDocs({
+        docs : [
+          {_id : 'doc_empty', field : ''},
+          {_id : 'doc_null', field : null},
+          {_id : 'doc_undefined' /* field undefined */},
+          {_id : 'doc_foo', field : 'foo'}
+        ]
+      }, function(err) {
+        var mapFunction = function(doc){emit(doc.field, null);};
+        var opts = {startkey : null, endkey : ''};
+        db.query(mapFunction, opts, function(err, data) {
+          data.rows.should.have.length(3);
+          data.rows[0].id.should.equal('doc_null');
+          data.rows[1].id.should.equal('doc_undefined');
+          data.rows[2].id.should.equal('doc_empty');
+
+          opts = {startkey : '', endkey : 'foo'};
+          db.query(mapFunction, opts, function(err, data) {
+            data.rows.should.have.length(2);
+            data.rows[0].id.should.equal('doc_empty');
+            data.rows[1].id.should.equal('doc_foo');
+
+            opts = {startkey : null, endkey : null};
+            db.query(mapFunction, opts, function(err, data) {
+              data.rows.should.have.length(2);
+              data.rows[0].id.should.equal('doc_null');
+              data.rows[1].id.should.equal('doc_undefined');
+
+              opts.descending = true;
+              db.query(mapFunction, opts, function(err, data) {
+                data.rows.should.have.length(2);
+                data.rows[0].id.should.equal('doc_undefined');
+                data.rows[1].id.should.equal('doc_null');
+                done();
+              });
+            });
+          });
+        });
+      });
+    });
+  });
 });
 
