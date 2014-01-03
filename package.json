@@ -8,7 +8,7 @@
     "url": "git://github.com/pouchdb/mapreduce.git"
   },
   "scripts": {
-    "test": "./node_modules/istanbul/lib/cli.js test ./node_modules/mocha/bin/_mocha test/test.js",
+    "test": "./node_modules/istanbul/lib/cli.js test ./node_modules/mocha/bin/_mocha test/test.js -- testDB http://localhost:5984/cwmtestdb",
     "build": "mkdir -p dist && browserify index.js -s mapReduce -o dist/pouchdb-mapreduce.js"
   },
   "keywords": [
