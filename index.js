@@ -16,36 +16,97 @@ var pouchCollate = require('pouchdb-collate');
 // and storing the result of the map function (possibly using the upcoming
 // extracted adapter functions)
 
+function normalize(key) {  // couch considers null === undefined for the purposes of mapreduce indexes
+  return typeof key === 'undefined' ? null : key;
+}
+
+function createKeysLookup(keys) {
+  // creates a lookup map for the given keys, so that doing
+  // query() with keys doesn't become an O(n * m) operation
+  // lookup values are typically integer indexes, but may
+  // map to a list of integers, since keys can be duplicated
+  var lookup = {};
+
+  for (var i = 0, len = keys.length; i < len; i++) {
+    var key = normalize(keys[i]);
+    var val = lookup[key];
+    if (typeof val === 'undefined') {
+      lookup[key] = i;
+    } else if (typeof val === 'number') {
+      lookup[key] = [val, i];
+    } else { // array
+      val.push(i);
+    }
+  }
+
+  return lookup;
+}
+
+function sortById(a, b) {
+  return pouchCollate(a.id, b.id);
+}
+function addAtIndex(idx, result, prelimResults) {
+  var val = prelimResults[idx];
+  if (typeof val === 'undefined') {
+    prelimResults[idx] = result;
+  } else if (!Array.isArray(val)) {
+    // same key for multiple docs, need to preserve document order, so create array
+    prelimResults[idx] = [val, result];
+  } else { // existing array
+    val.push(result);
+  }
+}
+
+function sum(values) {
+  return values.reduce(function (a, b) { return a + b; }, 0);
+}
+
+var builtInReduce = {
+  "_sum": function (keys, values){
+    return sum(values);
+  },
+
+  "_count": function (keys, values, rereduce){
+    if (rereduce){
+      return sum(values);
+    } else {
+      return values.length;
+    }
+  },
+
+  "_stats": function (keys, values, rereduce) {
+    return {
+      'sum': sum(values),
+      'min': Math.min.apply(null, values),
+      'max': Math.max.apply(null, values),
+      'count': values.length,
+      'sumsqr': (function () {
+        var _sumsqr = 0;
+        for(var idx in values) {
+          if (typeof values[idx] === 'number') {
+            _sumsqr += values[idx] * values[idx];
+          }
+        }
+        return _sumsqr;
+      })()
+    };
+  }
+};
+
+function addHttpParam(paramName, opts, params, asJson) {
+  // add an http param from opts to params, optionally json-encoded
+  var val = opts[paramName];
+  if (typeof val !== 'undefined') {
+    if (asJson) {
+      val = encodeURIComponent(JSON.stringify(val));
+    }
+    params.push(paramName + '=' + val);
+  }
+}
+
 function MapReduce(db) {
   if(!(this instanceof MapReduce)){
     return new MapReduce(db);
-  }
-
-  function normalize(key) {
-    // couch considers null === undefined for the purposes of mapreduce indexes
-    return typeof key === 'undefined' ? null : key;
-  }
-
-  function createKeysLookup(keys) {
-    // creates a lookup map for the given keys, so that doing
-    // query() with keys doesn't become an O(n * m) operation
-    // lookup values are typically integer indexes, but may
-    // map to a list of integers, since keys can be duplicated
-    var lookup = {};
-
-    for (var i = 0, len = keys.length; i < len; i++) {
-      var key = normalize(keys[i]);
-      var val = lookup[key];
-      if (typeof val === 'undefined') {
-        lookup[key] = i;
-      } else if (typeof val === 'number') {
-        lookup[key] = [val, i];
-      } else { // array
-        val.push(i);
-      }
-    }
-
-    return lookup;
   }
 
   function mapUsingKeys(inputResults, keys, keysLookup) {
@@ -57,32 +118,16 @@ function MapReduce(db) {
 
     var prelimResults = new Array(keys.length);
 
-    function addAtIndex(idx, result) {
-      var val = prelimResults[idx];
-      if (typeof val === 'undefined') {
-        prelimResults[idx] = result;
-      } else if (!Array.isArray(val)) {
-        // same key for multiple docs, need to preserve document order, so create array
-        prelimResults[idx] = [val, result];
-      } else { // existing array
-        val.push(result);
-      }
-    }
-
     inputResults.forEach(function(result) {
       var idx = keysLookup[normalize(result.key)];
       if (typeof idx === 'number') {
-        addAtIndex(idx, result);
+        addAtIndex(idx, result, prelimResults);
       } else { // array of indices
         idx.forEach(function(subIdx) {
-          addAtIndex(subIdx, result);
+          addAtIndex(subIdx, result, prelimResults);
         });
       }
     });
-
-    function sortById(a, b) {
-      return pouchCollate(a.id, b.id);
-    }
 
     // flatten the array, remove nulls, sort by doc ids
     var outputResults = [];
@@ -98,42 +143,6 @@ function MapReduce(db) {
 
     return outputResults;
   }
-
-  function sum(values) {
-    return values.reduce(function (a, b) { return a + b; }, 0);
-  }
-
-  var builtInReduce = {
-    "_sum": function (keys, values){
-      return sum(values);
-    },
-
-    "_count": function (keys, values, rereduce){
-      if (rereduce){
-        return sum(values);
-      } else {
-        return values.length;
-      }
-    },
-
-    "_stats": function (keys, values, rereduce) {
-      return {
-        'sum': sum(values),
-        'min': Math.min.apply(null, values),
-        'max': Math.max.apply(null, values),
-        'count': values.length,
-        'sumsqr': (function () {
-          var _sumsqr = 0;
-          for(var idx in values) {
-            if (typeof values[idx] === 'number') {
-              _sumsqr += values[idx] * values[idx];
-            }
-          }
-          return _sumsqr;
-        })()
-      };
-    }
-  };
 
   function viewQuery(fun, options) {
     if (!options.complete) {
@@ -204,7 +213,7 @@ function MapReduce(db) {
 
     //only proceed once all documents are mapped and joined
     function checkComplete() {
-      if (completed && results.length == num_started){
+      if (completed && results.length === num_started){
 
         if (typeof options.keys !== 'undefined' && results.length) { // user supplied a keys param, sort by keys
           keysLookup = keysLookup || createKeysLookup(options.keys);
@@ -267,17 +276,6 @@ function MapReduce(db) {
         checkComplete();
       }
     });
-  }
-
-  function addHttpParam(paramName, opts, params, asJson) {
-    // add an http param from opts to params, optionally json-encoded
-    var val = opts[paramName];
-    if (typeof val !== 'undefined') {
-      if (asJson) {
-        val = encodeURIComponent(JSON.stringify(val));
-      }
-      params.push(paramName + '=' + val);
-    }
   }
 
   function httpQuery(fun, opts, callback) {
