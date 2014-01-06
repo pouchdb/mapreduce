@@ -40,8 +40,10 @@ function createKeysLookup(keys) {
   return lookup;
 }
 
-function sortById(a, b) {
-  return pouchCollate(a.id, b.id);
+function sortByIdAndValue(a, b) {
+  // sort by id, then value
+  var idCompare = pouchCollate(a.id, b.id);
+  return idCompare !== 0 ? idCompare : pouchCollate(a.value, b.value);
 }
 function addAtIndex(idx, result, prelimResults) {
   var val = prelimResults[idx];
@@ -134,7 +136,7 @@ function MapReduce(db) {
     prelimResults.forEach(function (result) {
       if (typeof result !== 'undefined') {
         if (Array.isArray(result)) {
-          outputResults = outputResults.concat(result.sort(sortById));
+          outputResults = outputResults.concat(result.sort(sortByIdAndValue));
         } else { // single result
           outputResults.push(result);
         }
