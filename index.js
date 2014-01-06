@@ -224,7 +224,14 @@ function MapReduce(db) {
         var start = 0;
         var results;
         if(options.startkey){
-          start = resultsObj.keysLookup[options.startkey].start;
+          Object.keys(resultsObj.keysLookup).sort(pouchCollate).every(function(key){
+            if(pouchCollate(key, options.startkey) < 0){
+              return true;
+            }else{
+              start = resultsObj.keysLookup[key].start;
+              return false;
+            }
+          });
         }
         if(options.key){
           results = Object.keys(resultsObj.keysLookup[options.key]).map(function(v){
@@ -239,7 +246,14 @@ function MapReduce(db) {
             }));
           });
         }else if(options.endkey){
-          results = resultsObj.results.slice(start, resultsObj.keysLookup[options.endkey].start);
+          Object.keys(resultsObj.keysLookup).sort(pouchCollate).every(function(key){
+            if(pouchCollate(key, options.startkey) > 0){
+              return true;
+            }else{
+              resultsObj.results.slice(start, resultsObj.keysLookup[key].start);
+              return false;
+            }
+          });
         }else if(start){
           results = resultsObj.results.slice(start);
         }else{
