@@ -218,8 +218,9 @@ function MapReduce(db) {
     if (fun.reduce) {
       if (builtInReduce[fun.reduce]) {
         fun.reduce = builtInReduce[fun.reduce];
+      } else {
+        eval('fun.reduce = ' + fun.reduce.toString() + ';');
       }
-      eval('fun.reduce = ' + fun.reduce.toString() + ';');
     }
 
     //only proceed once all documents are mapped and joined
