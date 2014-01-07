@@ -165,7 +165,7 @@ function tests(dbName){
           };
           db.query(queryFun, {reduce: false}, function(_, res) {
             res.rows.forEach(function(x, i) {
-              JSON.stringify(x.key).should.equal(JSON.stringify(values[i]), 'keys collate');
+              JSON.stringify(x.key).should.equal(JSON.stringify(values[i]), 'should equall '+JSON.stringify(values[i]));
             });
             db.query(queryFun, {descending: true, reduce: false}, function(_, res) {
               res.rows.forEach(function(x, i) {

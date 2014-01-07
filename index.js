@@ -88,7 +88,9 @@ function rebuildResults(inputResults, keysLookup, idsLookup) {
   // 2. docs can appear >1 time in the list, if their key is specified >1 time
   // 3. keys can be unknown, in which case there's just a hole in the returned array
   var keys = Object.keys(keysLookup);
-  keys.sort(pouchCollate);
+  keys.sort(function(a,b){
+    return pouchCollate(keysLookup[a].key, keysLookup[b].key);
+  });
   var prelimResults = [];
 
   keys.forEach(function(key){
@@ -129,12 +131,14 @@ function buildIndices(db, fun, details, done){
     var idLookup = {};
 
     function emit(key, val) {
+      key = normalize(key);
+      var jKey = JSON.stringify(key);
       var viewRow = {
         id: current.doc._id,
         key: key,
-        value: val
+        value: val,
+        doc: current.doc
       };
-
       details.started++;
       if (val && typeof val === 'object' && val._id){
         db.get(val._id,
@@ -143,15 +147,15 @@ function buildIndices(db, fun, details, done){
                 viewRow.doc = joined_doc;
               }
               var currentIndex = results.length;
-              if(!keyLookup[key]){
-                keyLookup[key] = {ids:{}};
+              if(!keyLookup[jKey]){
+                keyLookup[jKey] = {ids:{},key:key};
               }
-              keyLookup[key].ids[currentIndex] ={id:currentIndex,doc:current.doc._id};
+              keyLookup[jKey].ids[currentIndex] ={id:currentIndex,doc:current.doc._id};
               if(!idLookup[current.doc._id]){
                 idLookup[current.doc._id] = {keys:{},doc:current.doc};
               }
-              if(typeof idLookup[current.doc._id].keys[key] === 'undefined'){
-                idLookup[current.doc._id].keys[key] = currentIndex;
+              if(typeof idLookup[current.doc._id].keys[jKey] === 'undefined'){
+                idLookup[current.doc._id].keys[jKey] = currentIndex;
               }
               results.push(viewRow);
               check(results, details, keyLookup, idLookup, done);
@@ -159,15 +163,15 @@ function buildIndices(db, fun, details, done){
         return;
       }
       var currentIndex = results.length;
-      if(!keyLookup[key]){
-        keyLookup[key] = {ids:{}};
+      if(!keyLookup[jKey]){
+        keyLookup[jKey] = {ids:{},key:key};
       }
-      keyLookup[key].ids[currentIndex] ={id:currentIndex,doc:current.doc._id};
+      keyLookup[jKey].ids[currentIndex] ={id:currentIndex,doc:current.doc._id};
       if(!idLookup[current.doc._id]){
         idLookup[current.doc._id] = {keys:[],doc:current.doc};
       }
-      if(typeof idLookup[current.doc._id].keys[key] === 'undefined'){
-        idLookup[current.doc._id].keys[key] = currentIndex;
+      if(typeof idLookup[current.doc._id].keys[jKey] === 'undefined'){
+        idLookup[current.doc._id].keys[jKey] = currentIndex;
       }
       results.push(viewRow);
     };
@@ -223,9 +227,12 @@ function MapReduce(db) {
     function buildQuarry(resultsObj) {
         var start = 0;
         var results;
-        if(options.startkey){
-          Object.keys(resultsObj.keysLookup).sort(pouchCollate).every(function(key){
-            if(pouchCollate(key, options.startkey) < 0){
+        var totalRows = resultsObj.results.length;
+        if('startkey' in options){
+          Object.keys(resultsObj.keysLookup).sort(function(a,b){
+              return pouchCollate(resultsObj.keysLookup[a].key, resultsObj.keysLookup[b].key);
+            }).every(function(key){
+            if(pouchCollate(resultsObj.keysLookup[key].key, options.startkey) < 0){
               return true;
             }else{
               start = resultsObj.keysLookup[key].start;
@@ -233,27 +240,35 @@ function MapReduce(db) {
             }
           });
         }
-        if(options.key){
-          results = Object.keys(resultsObj.keysLookup[options.key]).map(function(v){
-            return resultsObj.results[v];
+        if('key' in options && JSON.stringify(options.key) in resultsObj.keysLookup){
+          results = Object.keys(resultsObj.keysLookup[JSON.stringify(options.key)].ids).map(function(v){
+            return resultsObj.results[resultsObj.keysLookup[JSON.stringify(options.key)].ids[v].id];
           });
         }else if(options.keys){
-          options.keys.sort(pouchCollate);
           results = [];
           options.keys.forEach(function(key){
-            results = results.concat(Object.keys(resultsObj.keysLookup[key]).map(function(v){
-              return resultsObj.results[v];
+            var jKey = JSON.stringify(key);
+            if(!resultsObj.keysLookup[jKey]){
+              return;
+            }
+            results = results.concat(Object.keys(resultsObj.keysLookup[jKey].ids).map(function(v){
+              return resultsObj.results[resultsObj.keysLookup[jKey].ids[v].id];
             }));
           });
-        }else if(options.endkey){
-          Object.keys(resultsObj.keysLookup).sort(pouchCollate).every(function(key){
-            if(pouchCollate(key, options.startkey) > 0){
+        }else if('endkey' in options){
+          Object.keys(resultsObj.keysLookup).sort(function(a,b){
+              return pouchCollate(resultsObj.keysLookup[a].key, resultsObj.keysLookup[b].key);
+            }).every(function(key,i,list){
+            if(pouchCollate(resultsObj.keysLookup[key].key, options.endkey) <= 0){
               return true;
             }else{
-              resultsObj.results.slice(start, resultsObj.keysLookup[key].start);
+              results = resultsObj.results.slice(start, resultsObj.keysLookup[key].start);
               return false;
             }
           });
+          if(!Array.isArray(results)){
+            results = resultsObj.results.slice(start);
+          }
         }else if(start){
           results = resultsObj.results.slice(start);
         }else{
@@ -262,9 +277,14 @@ function MapReduce(db) {
         if (options.descending) {
           results.reverse();
         }
+        if(!options.include_docs){
+          results.forEach(function(row){
+            delete row.doc;
+          });
+        }
         if (options.reduce === false) {
           return options.complete(null, {
-            total_rows: results.length,
+            total_rows: totalRows,
             offset: options.skip,
             rows: ('limit' in options) ? results.slice(options.skip, options.limit + options.skip) :
               (options.skip > 0) ? results.slice(options.skip) : results
