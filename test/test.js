@@ -658,6 +658,61 @@ function tests(dbName) {
         });
       });
     });
+    it('Testing multiple emissions (issue #14)', function (done) {
+      pouch(dbName, function (err, db) {
+        db.bulkDocs({
+          docs: [
+            {_id: 'doc1', foo : 'foo', bar : 'bar'},
+            {_id: 'doc2', foo : 'foo', bar : 'bar'}
+          ]
+        }, function (err) {
+          var mapFunction = function (doc) {
+            emit(doc.foo, null);
+            emit(doc.foo, null);
+            emit(doc.bar, null);
+            emit(doc.bar, 'multiple values!');
+            emit(doc.bar, 'crazy!');
+          };
+          var opts = {keys: ['foo', 'bar']};
+
+          db.query(mapFunction, opts, function (err, data) {
+            data.rows.should.have.length(10);
+
+            data.rows[0].key.should.equal('foo');
+            data.rows[0].id.should.equal('doc1');
+            data.rows[1].key.should.equal('foo');
+            data.rows[1].id.should.equal('doc1');
+
+            data.rows[2].key.should.equal('foo');
+            data.rows[2].id.should.equal('doc2');
+            data.rows[3].key.should.equal('foo');
+            data.rows[3].id.should.equal('doc2');
+
+            data.rows[4].key.should.equal('bar');
+            data.rows[4].id.should.equal('doc1');
+            should.not.exist(data.rows[4].value);
+            data.rows[5].key.should.equal('bar');
+            data.rows[5].id.should.equal('doc1');
+            data.rows[5].value.should.equal('crazy!');
+            data.rows[6].key.should.equal('bar');
+            data.rows[6].id.should.equal('doc1');
+            data.rows[6].value.should.equal('multiple values!');
+
+            data.rows[7].key.should.equal('bar');
+            data.rows[7].id.should.equal('doc2');
+            should.not.exist(data.rows[7].value);
+            data.rows[8].key.should.equal('bar');
+            data.rows[8].id.should.equal('doc2');
+            data.rows[8].value.should.equal('crazy!');
+            data.rows[9].key.should.equal('bar');
+            data.rows[9].id.should.equal('doc2');
+            data.rows[9].value.should.equal('multiple values!');
+
+            done();
+          });
+        });
+      });
+    });
 
     it('Testing empty startkeys and endkeys', function (done) {
       pouch(dbName, function (err, db) {
