@@ -211,6 +211,7 @@ function MapReduce(db) {
     }
     // ugly way to make sure references to 'emit' in map/reduce bind to the
     // above emit
+
     eval('fun.map = ' + fun.map.toString() + ';');
     if (fun.reduce) {
       if (builtInReduce[fun.reduce]) {
@@ -276,7 +277,7 @@ function MapReduce(db) {
       conflicts: true,
       include_docs: true,
       onChange: function (doc) {
-        if (!('deleted' in doc)) {
+        if (!('deleted' in doc) && doc.id[0] !== "_") {
           current = {doc: doc.doc};
           fun.map.call(this, doc.doc);
         }
@@ -391,7 +392,6 @@ function MapReduce(db) {
         }
         return;
       }
-
       viewQuery({
         map: doc.views[parts[1]].map,
         reduce: doc.views[parts[1]].reduce

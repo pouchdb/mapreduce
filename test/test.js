@@ -301,16 +301,19 @@ function tests(dbName) {
           docs: [
             { val: 'bar' },
             { val: 'bar' },
-            { val: 'baz' }
+            { val: 'baz' },
+            {
+              _id: "_design/test",
+              views: {
+                thing: {
+                  map: "function(doc){emit(doc.val, 1);}",
+                  reduce: "_stats"
+                }
+              }
+            }
           ]
-        }, null, function () {
-          var queryFun = {
-            map: function (doc) {
-              emit(doc.val, 1);
-            },
-            reduce: "_stats"
-          };
-          db.query(queryFun, {reduce: true, group_level: 999}, function (err, res) {
+        }, null, function (err) {
+          db.query("test/thing", {reduce: true, group_level: 999}, function (err, res) {
             var stats = res.rows[0].value;
             stats.sum.should.equal(2);
             stats.count.should.equal(2);
