@@ -14,10 +14,16 @@ var pouchCollate = require('pouchdb-collate');
 // and storing the result of the map function (possibly using the upcoming
 // extracted adapter functions)
 
-function normalize(key) {  // couch considers null === undefined for the purposes of mapreduce indexes
+function normalize(key) {
+  // couch considers null === undefined for the purposes of mapreduce indexes
   return typeof key === 'undefined' ? null : key;
 }
-
+function MapReduceError(name, msg, code) {
+  this.name = name;
+  this.message = msg;
+  this.status =  code;
+}
+MapReduceError.prototype = new Error();
 function createKeysLookup(keys) {
   // creates a lookup map for the given keys, so that doing
   // query() with keys doesn't become an O(n * m) operation
@@ -69,14 +75,10 @@ var builtInReduce = {
   },
 
   "_count": function (keys, values, rereduce) {
-    if (rereduce) {
-      return sum(values);
-    } else {
-      return values.length;
-    }
+    return values.length;
   },
 
-  "_stats": function (keys, values, rereduce) {
+  "_stats": function (keys, values) {
     return {
       'sum': sum(values),
       'min': Math.min.apply(null, values),
@@ -87,6 +89,12 @@ var builtInReduce = {
         for (var idx in values) {
           if (typeof values[idx] === 'number') {
             _sumsqr += values[idx] * values[idx];
+          } else {
+            return new MapReduceError(
+              'builtin _stats function requires map values to be numbers',
+              'invalid_value',
+              500
+            );
           }
         }
         return _sumsqr;
@@ -134,12 +142,10 @@ function MapReduce(db) {
     // flatten the array, remove nulls, sort by doc ids
     var outputResults = [];
     prelimResults.forEach(function (result) {
-      if (typeof result !== 'undefined') {
-        if (Array.isArray(result)) {
-          outputResults = outputResults.concat(result.sort(sortByIdAndValue));
-        } else { // single result
-          outputResults.push(result);
-        }
+      if (Array.isArray(result)) {
+        outputResults = outputResults.concat(result.sort(sortByIdAndValue));
+      } else { // single result
+        outputResults.push(result);
       }
     });
 
@@ -148,10 +154,6 @@ function MapReduce(db) {
 
   function viewQuery(fun, options) {
     /*jshint evil: true */
-
-    if (!options.complete) {
-      return;
-    }
 
     if (!options.skip) {
       options.skip = 0;
@@ -211,6 +213,7 @@ function MapReduce(db) {
     }
     // ugly way to make sure references to 'emit' in map/reduce bind to the
     // above emit
+
     eval('fun.map = ' + fun.map.toString() + ';');
     if (fun.reduce) {
       if (builtInReduce[fun.reduce]) {
@@ -221,10 +224,11 @@ function MapReduce(db) {
 
     //only proceed once all documents are mapped and joined
     function checkComplete() {
+      var error;
       if (completed && results.length === num_started) {
 
-        if (typeof options.keys !== 'undefined' && results.length) { // user supplied a keys param, sort by keys
-          keysLookup = keysLookup || createKeysLookup(options.keys);
+        if (typeof options.keys !== 'undefined' && results.length) {
+          // user supplied a keys param, sort by keys
           results = mapUsingKeys(results, options.keys, keysLookup);
         } else { // normal sorting
           results.sort(function (a, b) {
@@ -247,7 +251,7 @@ function MapReduce(db) {
 
         var groups = [];
         results.forEach(function (e) {
-          var last = groups[groups.length - 1] || null;
+          var last = groups[groups.length - 1];
           if (last && pouchCollate(last.key[0][0], e.key) === 0) {
             last.key.push([e.key, e.id]);
             last.value.push(e.value);
@@ -259,10 +263,16 @@ function MapReduce(db) {
         });
         groups.forEach(function (e) {
           e.value = fun.reduce(e.key, e.value);
-          e.value = (typeof e.value === 'undefined') ? null : e.value;
+          if (e.value.sumsqr && e.value.sumsqr instanceof MapReduceError) {
+            error = e.value;
+            return;
+          }
           e.key = e.key[0][0];
         });
-
+        if (error) {
+          options.complete(error);
+          return;
+        }
         options.complete(null, {
           total_rows: groups.length,
           offset: options.skip,
@@ -276,7 +286,7 @@ function MapReduce(db) {
       conflicts: true,
       include_docs: true,
       onChange: function (doc) {
-        if (!('deleted' in doc)) {
+        if (!('deleted' in doc) && doc.id[0] !== "_") {
           current = {doc: doc.doc};
           fun.map.call(this, doc.doc);
         }
@@ -288,7 +298,8 @@ function MapReduce(db) {
     });
   }
 
-  function httpQuery(fun, opts, callback) {
+  function httpQuery(fun, opts) {
+    var callback = opts.complete;
 
     // List of parameters to add to the PUT request
     var params = [];
@@ -361,11 +372,15 @@ function MapReduce(db) {
       opts.complete = callback;
     }
 
+    if (typeof opts.complete !== 'function') {
+      throw new Error('Need a callback');
+    }
+
     if (db.type() === 'http') {
       if (typeof fun === 'function') {
-        return httpQuery({map: fun}, opts, callback);
+        return httpQuery({map: fun}, opts);
       }
-      return httpQuery(fun, opts, callback);
+      return httpQuery(fun, opts);
     }
 
     if (typeof fun === 'object') {
@@ -379,19 +394,14 @@ function MapReduce(db) {
     var parts = fun.split('/');
     db.get('_design/' + parts[0], function (err, doc) {
       if (err) {
-        if (callback) {
-          callback(err);
-        }
+        opts.complete(err);
         return;
       }
 
       if (!doc.views[parts[1]]) {
-        if (callback) {
-          callback({ name: 'not_found', message: 'missing_named_view' });
-        }
+        opts.complete({ name: 'not_found', message: 'missing_named_view' });
         return;
       }
-
       viewQuery({
         map: doc.views[parts[1]].map,
         reduce: doc.views[parts[1]].reduce
