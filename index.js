@@ -1,6 +1,4 @@
-/*global Pouch: true, pouchCollate: true */
-
-"use strict";
+'use strict';
 
 var pouchCollate = require('pouchdb-collate');
 
@@ -58,16 +56,18 @@ function addAtIndex(idx, result, prelimResults) {
 }
 
 function sum(values) {
-  return values.reduce(function (a, b) { return a + b; }, 0);
+  return values.reduce(function (a, b) {
+    return a + b;
+  }, 0);
 }
 
 var builtInReduce = {
-  "_sum": function (keys, values){
+  "_sum": function (keys, values) {
     return sum(values);
   },
 
-  "_count": function (keys, values, rereduce){
-    if (rereduce){
+  "_count": function (keys, values, rereduce) {
+    if (rereduce) {
       return sum(values);
     } else {
       return values.length;
@@ -82,7 +82,7 @@ var builtInReduce = {
       'count': values.length,
       'sumsqr': (function () {
         var _sumsqr = 0;
-        for(var idx in values) {
+        for (var idx in values) {
           if (typeof values[idx] === 'number') {
             _sumsqr += values[idx] * values[idx];
           }
@@ -105,7 +105,7 @@ function addHttpParam(paramName, opts, params, asJson) {
 }
 
 function MapReduce(db) {
-  if(!(this instanceof MapReduce)){
+  if (!(this instanceof MapReduce)) {
     return new MapReduce(db);
   }
 
@@ -118,12 +118,12 @@ function MapReduce(db) {
 
     var prelimResults = new Array(keys.length);
 
-    inputResults.forEach(function(result) {
+    inputResults.forEach(function (result) {
       var idx = keysLookup[normalize(result.key)];
       if (typeof idx === 'number') {
         addAtIndex(idx, result, prelimResults);
       } else { // array of indices
-        idx.forEach(function(subIdx) {
+        idx.forEach(function (subIdx) {
           addAtIndex(subIdx, result, prelimResults);
         });
       }
@@ -131,7 +131,7 @@ function MapReduce(db) {
 
     // flatten the array, remove nulls, sort by doc ids
     var outputResults = [];
-    prelimResults.forEach(function(result) {
+    prelimResults.forEach(function (result) {
       if (typeof result !== 'undefined') {
         if (Array.isArray(result)) {
           outputResults = outputResults.concat(result.sort(sortById));
@@ -145,6 +145,8 @@ function MapReduce(db) {
   }
 
   function viewQuery(fun, options) {
+    /*jshint evil: true */
+
     if (!options.complete) {
       return;
     }
@@ -170,9 +172,15 @@ function MapReduce(db) {
         value: val
       };
 
-      if (typeof options.startkey !== 'undefined' && pouchCollate(key, options.startkey) < 0) return;
-      if (typeof options.endkey !== 'undefined' && pouchCollate(key, options.endkey) > 0) return;
-      if (typeof options.key !== 'undefined' && pouchCollate(key, options.key) !== 0) return;
+      if (typeof options.startkey !== 'undefined' && pouchCollate(key, options.startkey) < 0) {
+        return;
+      }
+      if (typeof options.endkey !== 'undefined' && pouchCollate(key, options.endkey) > 0) {
+        return;
+      }
+      if (typeof options.key !== 'undefined' && pouchCollate(key, options.key) !== 0) {
+        return;
+      }
       if (typeof options.keys !== 'undefined') {
         keysLookup = keysLookup || createKeysLookup(options.keys);
         if (typeof keysLookup[normalize(key)] === 'undefined') {
@@ -183,23 +191,22 @@ function MapReduce(db) {
       num_started++;
       if (options.include_docs) {
         //in this special case, join on _id (issue #106)
-        if (val && typeof val === 'object' && val._id){
+        if (val && typeof val === 'object' && val._id) {
           db.get(val._id,
-              function (_, joined_doc){
-                if (joined_doc) {
-                  viewRow.doc = joined_doc;
-                }
-                results.push(viewRow);
-                checkComplete();
-              });
+            function (_, joined_doc) {
+              if (joined_doc) {
+                viewRow.doc = joined_doc;
+              }
+              results.push(viewRow);
+              checkComplete();
+            });
           return;
         } else {
           viewRow.doc = current.doc;
         }
       }
       results.push(viewRow);
-    };
-
+    }
     // ugly way to make sure references to 'emit' in map/reduce bind to the
     // above emit
     eval('fun.map = ' + fun.map.toString() + ';');
@@ -207,13 +214,12 @@ function MapReduce(db) {
       if (builtInReduce[fun.reduce]) {
         fun.reduce = builtInReduce[fun.reduce];
       }
-
       eval('fun.reduce = ' + fun.reduce.toString() + ';');
     }
 
     //only proceed once all documents are mapped and joined
     function checkComplete() {
-      if (completed && results.length === num_started){
+      if (completed && results.length === num_started) {
 
         if (typeof options.keys !== 'undefined' && results.length) { // user supplied a keys param, sort by keys
           keysLookup = keysLookup || createKeysLookup(options.keys);
@@ -239,13 +245,15 @@ function MapReduce(db) {
 
         var groups = [];
         results.forEach(function (e) {
-          var last = groups[groups.length-1] || null;
+          var last = groups[groups.length - 1] || null;
           if (last && pouchCollate(last.key[0][0], e.key) === 0) {
             last.key.push([e.key, e.id]);
             last.value.push(e.value);
             return;
           }
-          groups.push({key: [[e.key, e.id]], value: [e.value]});
+          groups.push({key: [
+            [e.key, e.id]
+          ], value: [e.value]});
         });
         groups.forEach(function (e) {
           e.value = fun.reduce(e.key, e.value);
@@ -260,7 +268,7 @@ function MapReduce(db) {
             (options.skip > 0) ? groups.slice(options.skip) : groups
         });
       }
-    };
+    }
 
     db.changes({
       conflicts: true,
@@ -272,7 +280,7 @@ function MapReduce(db) {
         }
       },
       complete: function () {
-        completed= true;
+        completed = true;
         checkComplete();
       }
     });
@@ -282,7 +290,7 @@ function MapReduce(db) {
 
     // List of parameters to add to the PUT request
     var params = [];
-    var body = undefined;
+    var body;
     var method = 'GET';
 
     // If opts.reduce exists and is defined, then add it to the list
@@ -305,7 +313,7 @@ function MapReduce(db) {
     if (typeof opts.keys !== 'undefined') {
       method = 'POST';
       if (typeof fun === 'string') {
-        body = JSON.stringify({keys:opts.keys});
+        body = JSON.stringify({keys: opts.keys});
       } else { // fun is {map : mapfun}, so append to this
         fun.keys = opts.keys;
       }
@@ -335,13 +343,13 @@ function MapReduce(db) {
     }));
 
     db.request({
-      method:'POST',
+      method: 'POST',
       url: '_temp_view' + params,
       body: queryObject
     }, callback);
   }
 
-  this.query = function(fun, opts, callback) {
+  this.query = function (fun, opts, callback) {
     if (typeof opts === 'function') {
       callback = opts;
       opts = {};
@@ -352,10 +360,10 @@ function MapReduce(db) {
     }
 
     if (db.type() === 'http') {
-    if (typeof fun === 'function'){
-      return httpQuery({map: fun}, opts, callback);
-    }
-    return httpQuery(fun, opts, callback);
+      if (typeof fun === 'function') {
+        return httpQuery({map: fun}, opts, callback);
+      }
+      return httpQuery(fun, opts, callback);
     }
 
     if (typeof fun === 'object') {
@@ -369,12 +377,16 @@ function MapReduce(db) {
     var parts = fun.split('/');
     db.get('_design/' + parts[0], function (err, doc) {
       if (err) {
-        if (callback) callback(err);
+        if (callback) {
+          callback(err);
+        }
         return;
       }
 
       if (!doc.views[parts[1]]) {
-        if (callback) callback({ name: 'not_found', message: 'missing_named_view' });
+        if (callback) {
+          callback({ name: 'not_found', message: 'missing_named_view' });
+        }
         return;
       }
 
@@ -383,10 +395,10 @@ function MapReduce(db) {
         reduce: doc.views[parts[1]].reduce
       }, opts);
     });
-  }
-
-};
+  };
+}
 
 // Deletion is a noop since we dont store the results of the view
-MapReduce._delete = function () { };
+MapReduce._delete = function () {
+};
 module.exports = MapReduce;
