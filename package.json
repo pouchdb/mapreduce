@@ -24,8 +24,8 @@
     "url": "https://github.com/pouchdb/mapreduce/issues"
   },
   "dependencies": {
-    "pouchdb-collate": "~0.2.0",
-    "lie": "~2.5.1"
+    "lie": "~2.5.1",
+    "pouchdb-collate": "~1.0.0"
   },
   "devDependencies": {
     "chai": "~1.8.1",
