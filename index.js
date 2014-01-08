@@ -1,7 +1,7 @@
 'use strict';
 
 var pouchCollate = require('pouchdb-collate');
-
+var Promise = require('lie');
 // This is the first implementation of a basic plugin, we register the
 // plugin object with pouch and it is mixin'd to each database created
 // (regardless of adapter), adapters can override plugins by providing
@@ -372,42 +372,54 @@ function MapReduce(db) {
     if (callback) {
       opts.complete = callback;
     }
+    var realCB = opts.complete;
+    var promise = new Promise(function (resolve, reject) {
+      opts.complete = function (err, data) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(data);
+        }
+      };
 
-    if (typeof opts.complete !== 'function') {
-      throw new Error('Need a callback');
-    }
+      if (db.type() === 'http') {
+        if (typeof fun === 'function') {
+          return httpQuery({map: fun}, opts);
+        }
+        return httpQuery(fun, opts);
+      }
 
-    if (db.type() === 'http') {
+      if (typeof fun === 'object') {
+        return viewQuery(fun, opts);
+      }
+
       if (typeof fun === 'function') {
-        return httpQuery({map: fun}, opts);
-      }
-      return httpQuery(fun, opts);
-    }
-
-    if (typeof fun === 'object') {
-      return viewQuery(fun, opts);
-    }
-
-    if (typeof fun === 'function') {
-      return viewQuery({map: fun}, opts);
-    }
-
-    var parts = fun.split('/');
-    db.get('_design/' + parts[0], function (err, doc) {
-      if (err) {
-        opts.complete(err);
-        return;
+        return viewQuery({map: fun}, opts);
       }
 
-      if (!doc.views[parts[1]]) {
-        opts.complete({ name: 'not_found', message: 'missing_named_view' });
-        return;
-      }
-      viewQuery({
-        map: doc.views[parts[1]].map,
-        reduce: doc.views[parts[1]].reduce
-      }, opts);
+      var parts = fun.split('/');
+      db.get('_design/' + parts[0], function (err, doc) {
+        if (err) {
+          opts.complete(err);
+          return;
+        }
+
+        if (!doc.views[parts[1]]) {
+          opts.complete({ name: 'not_found', message: 'missing_named_view' });
+          return;
+        }
+        viewQuery({
+          map: doc.views[parts[1]].map,
+          reduce: doc.views[parts[1]].reduce
+        }, opts);
+      });
     });
+    if (realCB) {
+      promise.then(function (resp) {
+        realCB(null, resp);
+      }, realCB);
+    }
+    return promise;
   };
 }
 

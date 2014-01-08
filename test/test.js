@@ -3,10 +3,15 @@
 var pouch = require('pouchdb');
 var Mapreduce = require('../');
 pouch.plugin('mapreduce', Mapreduce);
-var should = require('chai').should();
+var chai = require('chai');
+var should = chai.should();
+require("mocha-as-promised")();
+chai.use(require("chai-as-promised"));
+var denodify = require('lie-denodify');
 describe('local', function () {
   process.argv.slice(3).forEach(tests);
 });
+var pouchPromise = denodify(pouch);
 function tests(dbName) {
   beforeEach(function (done) {
     pouch(dbName, function (err, d) {
@@ -278,6 +283,30 @@ function tests(dbName) {
       });
     });
 
+    it("Built in _sum reduce function with a promsie", function () {
+      return pouchPromise(dbName).then(function (db) {
+        return denodify(db.bulkDocs)({
+          docs: [
+            { val: 'bar' },
+            { val: 'bar' },
+            { val: 'baz' }
+          ]
+        }).then(function () {
+          var queryFun = {
+            map: function (doc) {
+              emit(doc.val, 1);
+            },
+            reduce: "_sum"
+          };
+          return db.query(queryFun, {reduce: true, group_level: 999}).then(function (res) {
+            return res.rows.map(function (v) {
+              return v.value;
+            });
+          });
+        });
+      }).should.become([2, 1]);
+    });
+
     it("Built in _count reduce function", function (done) {
       pouch(dbName, function (err, db) {
         db.bulkDocs({
@@ -333,9 +362,10 @@ function tests(dbName) {
         });
       });
     });
-    it("Built in _stats reduce function should throw an error", function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({
+
+    it("Built in _stats reduce function should throw an error with a promise", function (done) {
+      return pouchPromise(dbName).then(function (db) {
+        return denodify(db.bulkDocs)({
           docs: [
             { val: 'bar' },
             { val: 'bar' },
@@ -350,13 +380,10 @@ function tests(dbName) {
               }
             }
           ]
-        }, function (err) {
-          db.query("test/thing", {reduce: true, group_level: 999}, function (err, res) {
-            var x = err.should.exist;
-            done();
-          });
+        }).then(function () {
+          return db.query("test/thing", {reduce: true, group_level: 999});
         });
-      });
+      }).should.be.rejected;
     });
 
     it("No reduce function, passing just a  function", function (done) {
@@ -916,14 +943,6 @@ function tests(dbName) {
           var a = err.should.exist;
           done();
         });
-      });
-    });
-    it('should error on no callback', function (done) {
-      pouch(dbName, function (err, db) {
-        should.Throw(function () {
-          db.query('fake/thing', {});
-        }, Error, 'Need a callback');
-        done();
       });
     });
     it('should work with a joined doc', function (done) {
