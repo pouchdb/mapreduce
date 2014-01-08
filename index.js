@@ -1,6 +1,8 @@
 'use strict';
 
 var pouchCollate = require('pouchdb-collate');
+var collate = pouchCollate.collate;
+var normalizeKey = pouchCollate.normalizeKey;
 
 // This is the first implementation of a basic plugin, we register the
 // plugin object with pouch and it is mixin'd to each database created
@@ -14,16 +16,13 @@ var pouchCollate = require('pouchdb-collate');
 // and storing the result of the map function (possibly using the upcoming
 // extracted adapter functions)
 
-function normalize(key) {
-  // couch considers null === undefined for the purposes of mapreduce indexes
-  return typeof key === 'undefined' ? null : key;
-}
 function MapReduceError(name, msg, code) {
   this.name = name;
   this.message = msg;
   this.status =  code;
 }
 MapReduceError.prototype = new Error();
+
 function createKeysLookup(keys) {
   // creates a lookup map for the given keys, so that doing
   // query() with keys doesn't become an O(n * m) operation
@@ -32,7 +31,7 @@ function createKeysLookup(keys) {
   var lookup = {};
 
   for (var i = 0, len = keys.length; i < len; i++) {
-    var key = normalize(keys[i]);
+    var key = normalizeKey(keys[i]);
     var val = lookup[key];
     if (typeof val === 'undefined') {
       lookup[key] = i;
@@ -48,8 +47,8 @@ function createKeysLookup(keys) {
 
 function sortByIdAndValue(a, b) {
   // sort by id, then value
-  var idCompare = pouchCollate(a.id, b.id);
-  return idCompare !== 0 ? idCompare : pouchCollate(a.value, b.value);
+  var idCompare = collate(a.id, b.id);
+  return idCompare !== 0 ? idCompare : collate(a.value, b.value);
 }
 function addAtIndex(idx, result, prelimResults) {
   var val = prelimResults[idx];
@@ -129,7 +128,7 @@ function MapReduce(db) {
     var prelimResults = new Array(keys.length);
 
     inputResults.forEach(function (result) {
-      var idx = keysLookup[normalize(result.key)];
+      var idx = keysLookup[normalizeKey(result.key)];
       if (typeof idx === 'number') {
         addAtIndex(idx, result, prelimResults);
       } else { // array of indices
@@ -176,18 +175,18 @@ function MapReduce(db) {
         value: val
       };
 
-      if (typeof options.startkey !== 'undefined' && pouchCollate(key, options.startkey) < 0) {
+      if (typeof options.startkey !== 'undefined' && collate(key, options.startkey) < 0) {
         return;
       }
-      if (typeof options.endkey !== 'undefined' && pouchCollate(key, options.endkey) > 0) {
+      if (typeof options.endkey !== 'undefined' && collate(key, options.endkey) > 0) {
         return;
       }
-      if (typeof options.key !== 'undefined' && pouchCollate(key, options.key) !== 0) {
+      if (typeof options.key !== 'undefined' && collate(key, options.key) !== 0) {
         return;
       }
       if (typeof options.keys !== 'undefined') {
         keysLookup = keysLookup || createKeysLookup(options.keys);
-        if (typeof keysLookup[normalize(key)] === 'undefined') {
+        if (typeof keysLookup[normalizeKey(key)] === 'undefined') {
           return;
         }
       }
@@ -234,8 +233,8 @@ function MapReduce(db) {
         } else { // normal sorting
           results.sort(function (a, b) {
             // sort by key, then id
-            var keyCollate = pouchCollate(a.key, b.key);
-            return keyCollate !== 0 ? keyCollate : pouchCollate(a.id, b.id);
+            var keyCollate = collate(a.key, b.key);
+            return keyCollate !== 0 ? keyCollate : collate(a.id, b.id);
           });
         }
         if (options.descending) {
@@ -253,7 +252,7 @@ function MapReduce(db) {
         var groups = [];
         results.forEach(function (e) {
           var last = groups[groups.length - 1];
-          if (last && pouchCollate(last.key[0][0], e.key) === 0) {
+          if (last && collate(last.key[0][0], e.key) === 0) {
             last.key.push([e.key, e.id]);
             last.value.push(e.value);
             return;

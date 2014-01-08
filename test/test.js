@@ -560,33 +560,48 @@ function tests(dbName) {
     it('Map documents on 0/null/undefined/empty string', function (done) {
       pouch(dbName, function (err, db) {
         var docs = [
-          {_id: 'doc0', num: 0},
-          {_id: 'doc1', num: 1},
-          {_id: 'doc2' /* num is undefined */},
-          {_id: 'doc3', num: null},
-          {_id: 'doc4', num: ''}
+          {_id: '0', num: 0},
+          {_id: '1', num: 1},
+          {_id: 'undef' /* num is undefined */},
+          {_id: 'null', num: null},
+          {_id: 'empty', num: ''},
+          {_id: 'nan', num: NaN},
+          {_id: 'inf', num: Infinity},
+          {_id: 'neginf', num: -Infinity}
         ];
         db.bulkDocs({docs: docs}, function (err) {
           var mapFunction = function (doc) {
             emit(doc.num);
           };
 
-          db.query(mapFunction, {key: 0, include_docs: true}, function (err, data) {
+          db.query(mapFunction, {key: 0}, function (err, data) {
             data.rows.should.have.length(1);
-            data.rows[0].doc._id.should.equal('doc0');
+            data.rows[0].id.should.equal('0');
 
-            db.query(mapFunction, {key: null, include_docs: true}, function (err, data) {
-              data.rows.should.have.length(2);
-              data.rows[0].doc._id.should.equal('doc2');
-              data.rows[1].doc._id.should.equal('doc3');
+            db.query(mapFunction, {key: ''}, function (err, data) {
+              data.rows.should.have.length(1);
+              data.rows[0].id.should.equal('empty');
 
-              db.query(mapFunction, {key: '', include_docs: true}, function (err, data) {
-                data.rows.should.have.length(1);
-                data.rows[0].doc._id.should.equal('doc4');
+              db.query(mapFunction, {key: undefined}, function (err, data) {
+                data.rows.should.have.length(8); // everything
 
-                db.query(mapFunction, {key: undefined, include_docs: true}, function (err, data) {
-                  data.rows.should.have.length(5); // everything
-                  done();
+                // keys that should all resolve to null
+                var emptyKeys = [null, NaN, Infinity, -Infinity];
+                var numDone = 0;
+                emptyKeys.forEach(function (emptyKey) {
+                  db.query(mapFunction, {key: emptyKey}, function (err, data) {
+                    data.rows.should.have.length(5);
+                    data.rows[0].id.should.equal('inf');
+                    data.rows[1].id.should.equal('nan');
+                    data.rows[2].id.should.equal('neginf');
+                    data.rows[3].id.should.equal('null');
+                    data.rows[4].id.should.equal('undef');
+
+                    numDone++;
+                    if (numDone === emptyKeys.length) { // all done
+                      done();
+                    }
+                  });
                 });
               });
             });
@@ -804,7 +819,6 @@ function tests(dbName) {
         });
       });
     });
-
     it('Testing empty startkeys and endkeys', function (done) {
       pouch(dbName, function (err, db) {
         db.bulkDocs({
@@ -849,63 +863,90 @@ function tests(dbName) {
           });
         });
       });
+    });
+    it('Testing ordering with startkey/endkey/key', function (done) {
+      pouch(dbName, function (err, db) {
+        db.bulkDocs({
+          docs: [
+            {_id: 'h', field: '4'},
+            {_id: 'a', field: '1'},
+            {_id: 'e', field: '2'},
+            {_id: 'c', field: '1'},
+            {_id: 'f', field: '3'},
+            {_id: 'g', field: '4'},
+            {_id: 'd', field: '2'},
+            {_id: 'b', field: '1'}
+          ]
+        }, function (err) {
+          var mapFunction = function (doc) {
+            emit(doc.field, null);
+          };
+          var opts = {startkey: '1', endkey: '4'};
+          db.query(mapFunction, opts, function (err, data) {
+            data.rows.should.have.length(8);
+            // 1
+            data.rows[0].id.should.equal('a');
+            data.rows[1].id.should.equal('b');
+            data.rows[2].id.should.equal('c');
+            // 2
+            data.rows[3].id.should.equal('d');
+            data.rows[4].id.should.equal('e');
+            // 3
+            data.rows[5].id.should.equal('f');
+            // 4
+            data.rows[6].id.should.equal('g');
+            data.rows[7].id.should.equal('h');
 
-      it('Testing ordering with startkey/endkey/key', function (done) {
-        pouch(dbName, function (err, db) {
-          db.bulkDocs({
-            docs: [
-              {_id: 'h', field: '4'},
-              {_id: 'a', field: '1'},
-              {_id: 'e', field: '2'},
-              {_id: 'c', field: '1'},
-              {_id: 'f', field: '3'},
-              {_id: 'g', field: '4'},
-              {_id: 'd', field: '2'},
-              {_id: 'b', field: '1'}
-            ]
-          }, function (err) {
-            var mapFunction = function (doc) {
-              emit(doc.field);
-            };
-            var opts = {startkey: '1', endkey: '4'};
+            opts = {key: '1'};
             db.query(mapFunction, opts, function (err, data) {
-              data.rows.should.have.length(8);
-              // 1
+              data.rows.should.have.length(3);
               data.rows[0].id.should.equal('a');
               data.rows[1].id.should.equal('b');
               data.rows[2].id.should.equal('c');
-              // 2
-              data.rows[3].id.should.equal('d');
-              data.rows[4].id.should.equal('e');
-              // 3
-              data.rows[5].id.should.equal('f');
-              // 4
-              data.rows[6].id.should.equal('g');
-              data.rows[7].id.should.equal('h');
 
-              opts = {key: '1'};
+              opts = {key: '2'};
               db.query(mapFunction, opts, function (err, data) {
-                data.rows.should.have.length(3);
-                data.rows[0].id.should.equal('a');
-                data.rows[1].id.should.equal('b');
-                data.rows[2].id.should.equal('c');
+                data.rows.should.have.length(2);
+                data.rows[0].id.should.equal('d');
+                data.rows[1].id.should.equal('e');
 
-                opts = {key: '2'};
+                opts.descending = true;
                 db.query(mapFunction, opts, function (err, data) {
                   data.rows.should.have.length(2);
-                  data.rows[0].id.should.equal('d');
-                  data.rows[1].id.should.equal('e');
-
-                  opts.descending = true;
-                  db.query(mapFunction, opts, function (err, data) {
-                    data.rows.should.have.length(2);
-                    data.rows[0].id.should.equal('e');
-                    data.rows[1].id.should.equal('d');
-                    done();
-                  });
+                  data.rows[0].id.should.equal('e');
+                  data.rows[1].id.should.equal('d');
+                  done();
                 });
               });
             });
+          });
+        });
+      });
+    });
+    it('Testing ordering with dates', function (done) {
+      pouch(dbName, function (err, db) {
+        db.bulkDocs({
+          docs: [
+            {_id: '1969', date: '1969 was when Space Oddity hit'},
+            {_id: '1971', date : new Date('1971-12-17T00:00:00.000Z')}, // Hunky Dory was released
+            {_id: '1972', date: '1972 was when Ziggy landed on Earth'},
+            {_id: '1977', date: new Date('1977-01-14T00:00:00.000Z')}, // Low was released
+            {_id: '1985', date: '1985+ is better left unmentioned'}
+          ]
+        }, function (err) {
+          var mapFunction = function (doc) {
+            emit(doc.date, null);
+          };
+
+          db.query(mapFunction, function (err, data) {
+
+            data.rows.should.have.length(5);
+            data.rows[0].id.should.equal('1969');
+            data.rows[1].id.should.equal('1971');
+            data.rows[2].id.should.equal('1972');
+            data.rows[3].id.should.equal('1977');
+            data.rows[4].id.should.equal('1985');
+            done();
           });
         });
       });
