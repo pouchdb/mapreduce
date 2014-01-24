@@ -36,6 +36,7 @@
     "jshint": "~2.3.0",
     "mocha-as-promised": "~2.0.0",
     "chai-as-promised": "~4.1.0",
-    "lie-denodify": "~0.1.2"
+    "lie-denodify": "~0.1.2",
+    "lie-all": "~0.1.5"
   }
 }

@@ -1,3 +1,4 @@
+/*jshint expr:true */
 'use strict';
 
 var pouch = require('pouchdb');
@@ -8,6 +9,7 @@ var should = chai.should();
 require("mocha-as-promised")();
 chai.use(require("chai-as-promised"));
 var denodify = require('lie-denodify');
+var all = require("lie-all");
 describe('local', function () {
   process.argv.slice(3).forEach(tests);
 });
@@ -24,131 +26,133 @@ function tests(dbName) {
     });
   });
   describe('views', function () {
-    it("Test basic view", function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({docs: [
+    it("Test basic view", function () {
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        var get = denodify(db.get);
+        var remove = denodify(db.remove);
+        return bulk({docs: [
           {foo: 'bar'},
           { _id: 'volatile', foo: 'baz' }
-        ]}, {}, function () {
-          var queryFun = {
+        ]}).then(function () {
+          return get('volatile');
+        }).then(function (doc) {
+          return remove(doc);
+        }).then(function () {
+          return db.query({
             map: function (doc) {
               emit(doc.foo, doc);
             }
-          };
-          db.get('volatile', function (_, doc) {
-            db.remove(doc, function (_, resp) {
-              db.query(queryFun, {include_docs: true, reduce: false}, function (_, res) {
-                res.rows.should.have.length(1, 'Dont include deleted documents');
-                res.total_rows.should.equal(1, 'Include total_rows property.');
-                res.rows.forEach(function (x, i) {
-                  should.exist(x.id);
-                  should.exist(x.key);
-                  should.exist(x.value);
-                  should.exist(x.value._rev);
-                  should.exist(x.doc);
-                  should.exist(x.doc._rev);
-                });
-                done();
-              });
-            });
+          }, {include_docs: true, reduce: false});
+        }).then(function (res) {
+          res.rows.should.have.length(1, 'Dont include deleted documents');
+          res.total_rows.should.equal(1, 'Include total_rows property.');
+          res.rows.forEach(function (x, i) {
+            should.exist(x.id);
+            should.exist(x.key);
+            should.exist(x.value);
+            should.exist(x.value._rev);
+            should.exist(x.doc);
+            should.exist(x.doc._rev);
           });
         });
       });
     });
 
-    it("Test passing just a function", function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({docs: [
+    it("Test passing just a function", function () {
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        var get = denodify(db.get);
+        var remove = denodify(db.remove);
+        return bulk({docs: [
           {foo: 'bar'},
           { _id: 'volatile', foo: 'baz' }
-        ]}, {}, function () {
-          var queryFun = function (doc) {
+        ]}).then(function () {
+          return get('volatile');
+        }).then(function (doc) {
+          return remove(doc);
+        }).then(function () {
+          return db.query(function (doc) {
             emit(doc.foo, doc);
-          };
-          db.get('volatile', function (_, doc) {
-            db.remove(doc, function (_, resp) {
-              db.query(queryFun, {include_docs: true, reduce: false, complete: function (_, res) {
-                res.rows.should.have.length(1, 'Dont include deleted documents');
-                res.rows.forEach(function (x, i) {
-                  should.exist(x.id);
-                  should.exist(x.key);
-                  should.exist(x.value);
-                  should.exist(x.value._rev);
-                  should.exist(x.doc);
-                  should.exist(x.doc._rev);
-                });
-                done();
-              }});
-            });
+          }, {include_docs: true, reduce: false});
+        }).then(function (res) {
+          res.rows.should.have.length(1, 'Dont include deleted documents');
+          res.rows.forEach(function (x, i) {
+            should.exist(x.id);
+            should.exist(x.key);
+            should.exist(x.value);
+            should.exist(x.value._rev);
+            should.exist(x.doc);
+            should.exist(x.doc._rev);
           });
         });
       });
     });
 
-    it("Test opts.startkey/opts.endkey", function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({docs: [
+    it("Test opts.startkey/opts.endkey", function () {
+      var queryFun = {
+        map: function (doc) {
+          emit(doc.key, doc);
+        }
+      };
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        return bulk({docs: [
           {key: 'key1'},
           {key: 'key2'},
           {key: 'key3'},
           {key: 'key4'},
           {key: 'key5'}
-        ]}, {}, function () {
-          var queryFun = {
-            map: function (doc) {
-              emit(doc.key, doc);
-            }
-          };
-          db.query(queryFun, {reduce: false, startkey: 'key2'}, function (_, res) {
-            res.rows.should.have.length(4, 'Startkey is inclusive');
-            db.query(queryFun, {reduce: false, endkey: 'key3'}, function (_, res) {
-              res.rows.should.have.length(3, 'Endkey is inclusive');
-              db.query(queryFun, {
-                reduce: false,
-                startkey: 'key2',
-                endkey: 'key3'
-              }, function (_, res) {
-                res.rows.should.have.length(2, 'Startkey and endkey together');
-                db.query(queryFun, {
-                  reduce: false,
-                  startkey: 'key4',
-                  endkey: 'key4'
-                }, function (_, res) {
-                  res.rows.should.have.length(1, 'Startkey=endkey');
-                  done();
-                });
-              });
-            });
+        ]}).then(function () {
+          return db.query(queryFun, {reduce: false, startkey: 'key2'});
+        }).then(function (res) {
+          res.rows.should.have.length(4, 'Startkey is inclusive');
+          return db.query(queryFun, {reduce: false, endkey: 'key3'});
+        }).then(function (res) {
+          res.rows.should.have.length(3, 'Endkey is inclusive');
+          return db.query(queryFun, {
+            reduce: false,
+            startkey: 'key2',
+            endkey: 'key3'
           });
+        }).then(function (res) {
+          res.rows.should.have.length(2, 'Startkey and endkey together');
+          return db.query(queryFun, {
+            reduce: false,
+            startkey: 'key4',
+            endkey: 'key4'
+          });
+        }).then(function (res) {
+          res.rows.should.have.length(1, 'Startkey=endkey');
         });
       });
     });
 
-    it("Test opts.key", function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({docs: [
+    it("Test opts.key", function () {
+      var queryFun = {
+        map: function (doc) {
+          emit(doc.key, doc);
+        }
+      };
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        return bulk({docs: [
           {key: 'key1'},
           {key: 'key2'},
           {key: 'key3'},
           {key: 'key3'}
-        ]}, {}, function () {
-          var queryFun = {
-            map: function (doc) {
-              emit(doc.key, doc);
-            }
-          };
-          db.query(queryFun, {reduce: false, key: 'key2'}, function (_, res) {
-            res.rows.should.have.length(1, 'Doc with key');
-            db.query(queryFun, {reduce: false, key: 'key3'}, function (_, res) {
-              res.rows.should.have.length(2, 'Multiple docs with key');
-              done();
-            });
-          });
+        ]}).then(function () {
+          return db.query(queryFun, {reduce: false, key: 'key2'});
+        }).then(function (res) {
+          res.rows.should.have.length(1, 'Doc with key');
+          return db.query(queryFun, {reduce: false, key: 'key3'});
+        }).then(function (res) {
+          res.rows.should.have.length(2, 'Multiple docs with key');
         });
       });
     });
 
-    it("Test basic view collation", function (done) {
+    it("Test basic view collation", function () {
 
       var values = [];
 
@@ -194,98 +198,72 @@ function tests(dbName) {
       // (this test might fail if used with a js engine
       // that doesn't preserve order)
       values.push({b: 2, c: 2});
-
-      pouch(dbName, function (err, db) {
+      var queryFun = {
+        map: function (doc) {
+          emit(doc.foo);
+        }
+      };
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
         var docs = values.map(function (x, i) {
           return {_id: (i).toString(), foo: x};
         });
-        db.bulkDocs({docs: docs}, {}, function () {
-          var queryFun = {
-            map: function (doc) {
-              emit(doc.foo);
-            }
-          };
-          db.query(queryFun, {reduce: false}, function (_, res) {
-            res.rows.forEach(function (x, i) {
-              JSON.stringify(x.key).should.equal(JSON.stringify(values[i]), 'keys collate');
-            });
-            db.query(queryFun, {descending: true, reduce: false}, function (_, res) {
-              res.rows.forEach(function (x, i) {
-                JSON.stringify(x.key).should.equal(JSON.stringify(values[values.length - 1 - i]),
-                  'keys collate descending');
-              });
-              done();
-            });
+        return bulk({docs: docs}).then(function () {
+          return db.query(queryFun, {reduce: false});
+        }).then(function (res) {
+          res.rows.forEach(function (x, i) {
+            JSON.stringify(x.key).should.equal(JSON.stringify(values[i]), 'keys collate');
+          });
+          return db.query(queryFun, {descending: true, reduce: false});
+        }).then(function (res) {
+          res.rows.forEach(function (x, i) {
+            JSON.stringify(x.key).should.equal(JSON.stringify(values[values.length - 1 - i]),
+              'keys collate descending');
           });
         });
       });
     });
 
-    it("Test joins", function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({docs: [
+    it("Test joins", function () {
+      var queryFun = {
+        map: function (doc) {
+          if (doc.doc_id) {
+            emit(doc._id, {_id: doc.doc_id});
+          }
+        }
+      };
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        return bulk({docs: [
           {_id: 'mydoc', foo: 'bar'},
           { doc_id: 'mydoc' }
-        ]}, {}, function () {
-          var queryFun = {
-            map: function (doc) {
-              if (doc.doc_id) {
-                emit(doc._id, {_id: doc.doc_id});
-              }
-            }
-          };
-          db.query(queryFun, {include_docs: true, reduce: false}, function (_, res) {
-            should.exist(res.rows[0].doc);
-            res.rows[0].doc._id.should.equal('mydoc', 'mydoc included');
-            done();
-          });
+        ]}).then(function () {
+          return db.query(queryFun, {include_docs: true, reduce: false});
+        }).then(function (res) {
+          should.exist(res.rows[0].doc);
+          return res.rows[0].doc._id;
         });
-      });
+      }).should.become('mydoc', 'mydoc included');
     });
 
-    it("No reduce function", function (done) {
-      pouch(dbName, function (err, db) {
-        db.post({foo: 'bar'}, function (err, res) {
+    it("No reduce function", function () {
+      return pouchPromise(dbName).then(function (db) {
+        var post = denodify(db.post);
+        return post({foo: 'bar'}).then(function () {
           var queryFun = {
             map: function (doc) {
               emit('key', 'val');
             }
           };
-          db.query(queryFun, function (err, res) {
-            done();
-          });
+          return db.query(queryFun);
         });
-      });
+      }).should.be.fulfilled;
     });
 
-    it("Built in _sum reduce function", function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({
-          docs: [
-            { val: 'bar' },
-            { val: 'bar' },
-            { val: 'baz' }
-          ]
-        }, function () {
-          var queryFun = {
-            map: function (doc) {
-              emit(doc.val, 1);
-            },
-            reduce: "_sum"
-          };
-          db.query(queryFun, {reduce: true, group_level: 999}, function (err, res) {
-            res.rows.should.have.length(2);
-            res.rows[0].value.should.equal(2);
-            res.rows[1].value.should.equal(1);
-            done();
-          });
-        });
-      });
-    });
-
-    it("Built in _sum reduce function with a promsie", function () {
+    it("Built in _sum reduce function", function () {
       return pouchPromise(dbName).then(function (db) {
-        return denodify(db.bulkDocs)({
+        var bulk = denodify(db.bulkDocs);
+        return bulk({
           docs: [
             { val: 'bar' },
             { val: 'bar' },
@@ -298,43 +276,44 @@ function tests(dbName) {
             },
             reduce: "_sum"
           };
-          return db.query(queryFun, {reduce: true, group_level: 999}).then(function (res) {
-            return res.rows.map(function (v) {
-              return v.value;
-            });
+          return db.query(queryFun, {reduce: true, group_level: 999});
+        }).then(function (resp) {
+          return resp.rows.map(function (row) {
+            return row.value;
           });
         });
       }).should.become([2, 1]);
     });
 
-    it("Built in _count reduce function", function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({
+    it("Built in _count reduce function", function () {
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        return bulk({
           docs: [
             { val: 'bar' },
             { val: 'bar' },
             { val: 'baz' }
           ]
-        }, function () {
+        }).then(function () {
           var queryFun = {
             map: function (doc) {
               emit(doc.val, doc.val);
             },
             reduce: "_count"
           };
-          db.query(queryFun, {reduce: true, group_level: 999}, function (err, res) {
-            res.rows.should.have.length(2);
-            res.rows[0].value.should.equal(2);
-            res.rows[1].value.should.equal(1);
-            done();
+          return db.query(queryFun, {reduce: true, group_level: 999});
+        }).then(function (resp) {
+          return resp.rows.map(function (row) {
+            return row.value;
           });
         });
-      });
+      }).should.become([2, 1]);
     });
 
-    it("Built in _stats reduce function", function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({
+    it("Built in _stats reduce function", function () {
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        return bulk({
           docs: [
             { val: 'bar' },
             { val: 'bar' },
@@ -349,23 +328,24 @@ function tests(dbName) {
               }
             }
           ]
-        }, function (err) {
-          db.query("test/thing", {reduce: true, group_level: 999}, function (err, res) {
-            var stats = res.rows[0].value;
-            stats.sum.should.equal(2);
-            stats.count.should.equal(2);
-            stats.min.should.equal(1);
-            stats.max.should.equal(1);
-            stats.sumsqr.should.equal(2);
-            done();
-          });
+        }).then(function () {
+          return db.query("test/thing", {reduce: true, group_level: 999});
+        }).then(function (res) {
+          return res.rows[0].value;
         });
+      }).should.become({
+        sum: 2,
+        count: 2,
+        min: 1,
+        max: 1,
+        sumsqr: 2
       });
     });
 
     it("Built in _stats reduce function should throw an error with a promise", function (done) {
       return pouchPromise(dbName).then(function (db) {
-        return denodify(db.bulkDocs)({
+        var bulk = denodify(db.bulkDocs);
+        return bulk({
           docs: [
             { val: 'bar' },
             { val: 'bar' },
@@ -386,124 +366,130 @@ function tests(dbName) {
       }).should.be.rejected;
     });
 
-    it("No reduce function, passing just a  function", function (done) {
-      pouch(dbName, function (err, db) {
-        db.post({foo: 'bar'}, function (err, res) {
+    it("No reduce function, passing just a function", function () {
+      return pouchPromise(dbName).then(function (db) {
+        var post = denodify(db.post);
+        return post({foo: 'bar'}).then(function () {
           var queryFun = function (doc) {
             emit('key', 'val');
           };
-          db.query(queryFun, function (err, res) {
-            done();
-          });
+          return db.query(queryFun);
         });
-      });
+      }).should.be.fulfilled;
     });
 
 
-    it('Views should include _conflicts', function (done) {
-      var self = this;
+    it('Views should include _conflicts', function () {
+      var db2name = 'test2' + Math.random();
+      var cleanup = denodify(function (done) {
+        pouch.destroy(db2name, function () {
+          done();
+        });
+      });
       var doc1 = {_id: '1', foo: 'bar'};
       var doc2 = {_id: '1', foo: 'baz'};
       var queryFun = function (doc) {
         emit(doc._id, !!doc._conflicts);
       };
-      pouch(dbName, function (err, db) {
-        pouch('testdb2', function (err, remote) {
-          db.post(doc1, function (err, res) {
-            remote.post(doc2, function (err, res) {
-              db.replicate.from(remote, function (err, res) {
-                db.get(doc1._id, {conflicts: true}, function (err, res) {
-                  should.exist(res._conflicts);
-                  db.query(queryFun, function (err, res) {
-                    res.rows[0].value.should.equal(true);
-                    pouch.destroy('testdb2', function () {
-                      done();
-                    });
-                  });
-                });
-              });
+      return pouchPromise(dbName).then(function (db) {
+        return pouchPromise(db2name).then(function (remote) {
+          var dbpost = denodify(db.post);
+          var remotepost = denodify(remote.post);
+          var replicate = denodify(db.replicate.from);
+          var get = denodify(db.get);
+          return dbpost(doc1).then(function () {
+            return remotepost(doc2); 
+          }).then(function () {
+            return replicate(remote);
+          }).then(function () {
+            return get(doc1._id, {conflicts: true});
+          }).then(function (res) {
+            res._conflicts.should.exist;
+            return db.query(queryFun);
+          }).then(function (res) {
+            return cleanup().then(function () {
+              res.rows[0].value.should.be.true;
+            });
+          }, function (err) {
+            return cleanup().then(function () {
+              throw err;
             });
           });
         });
       });
     });
 
-    it("Test view querying with limit option", function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({
+    it("Test view querying with limit option", function () {
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        return bulk({
           docs: [
             { foo: 'bar' },
             { foo: 'bar' },
             { foo: 'baz' }
           ]
-        }, function () {
-
-          db.query(function (doc) {
+        }).then(function () {
+          return db.query(function (doc) {
             if (doc.foo === 'bar') {
               emit(doc.foo);
             }
-          }, { limit: 1 }, function (err, res) {
-            res.total_rows.should.equal(2, 'Correctly returns total rows');
-            res.rows.should.have.length(1, 'Correctly limits returned rows');
-            done();
-          });
-
+          }, { limit: 1 });
+        }).then(function (res) {
+          res.total_rows.should.equal(2, 'Correctly returns total rows');
+          res.rows.should.have.length(1, 'Correctly limits returned rows');
         });
       });
     });
-    it("Test view querying with limit option and reduce", function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({
+    it("Test view querying with limit option and reduce", function () {
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        return bulk({
           docs: [
             { foo: 'bar' },
             { foo: 'bar' },
             { foo: 'baz' }
           ]
-        }, function () {
-
-          db.query({
+        }).then(function () {
+          return db.query({
             map: function (doc) {
               emit(doc.foo);
             },
             reduce: '_count'
-          }, { limit: 1, group: true, reduce: true}, function (err, res) {
-            res.rows.should.have.length(1, 'Correctly limits returned rows');
-            res.rows[0].key.should.equal('bar');
-            res.rows[0].value.should.equal(2);
-            done();
-          });
-
+          }, { limit: 1, group: true, reduce: true});
         });
+      }).then(function (res) {
+        res.rows.should.have.length(1, 'Correctly limits returned rows');
+        res.rows[0].key.should.equal('bar');
+        res.rows[0].value.should.equal(2);
       });
     });
-    it("Test view querying with a skip option and reduce", function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({
+    it("Test view querying with a skip option and reduce", function () {
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        return bulk({
           docs: [
             { foo: 'bar' },
             { foo: 'bar' },
             { foo: 'baz' }
           ]
-        }, function () {
-
-          db.query({
+        }).then(function () {
+          return db.query({
             map: function (doc) {
               emit(doc.foo);
             },
             reduce: '_count'
-          }, {skip: 1, group: true, reduce: true}, function (err, res) {
-            res.rows.should.have.length(1, 'Correctly limits returned rows');
-            res.rows[0].key.should.equal('baz');
-            res.rows[0].value.should.equal(1);
-            done();
-          });
-
+          }, {skip: 1, group: true, reduce: true});
         });
+      }).then(function (res) {
+        res.rows.should.have.length(1, 'Correctly limits returned rows');
+        res.rows[0].key.should.equal('baz');
+        res.rows[0].value.should.equal(1);
       });
     });
 
-    it("Query non existing view returns error", function (done) {
-      pouch(dbName, function (err, db) {
+    it("Query non existing view returns error", function () {
+      return pouchPromise(dbName).then(function (db) {
+        var post = denodify(db.post);
         var doc = {
           _id: '_design/barbar',
           views: {
@@ -512,80 +498,78 @@ function tests(dbName) {
             }
           }
         };
-        db.post(doc, function (err, info) {
-          db.query('barbar/dontExist', {key: 'bar'}, function (err, res) {
-            err.name.should.equal('not_found');
-            err.message.should.equal('missing_named_view');
-            done();
-          });
+        return post(doc).then(function () {
+          return db.query('barbar/dontExist', {key: 'bar'});
         });
-      });
+      }).should.be.rejected;
     });
 
     it("Special document member _doc_id_rev should never leak outside", function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        return bulk({
           docs: [
             { foo: 'bar' }
           ]
-        }, null, function () {
-
-          db.query(function (doc) {
+        }).then(function () {
+          return db.query(function (doc) {
             if (doc.foo === 'bar') {
               emit(doc.foo);
             }
-          }, { include_docs: true }, function (err, res) {
-            should.not.exist(res.rows[0].doc._doc_id_rev, '_doc_id_rev is leaking but should not');
-            done();
-          });
+          }, { include_docs: true });
+        }).then(function (res) {
+          should.not.exist(res.rows[0].doc._doc_id_rev, '_doc_id_rev is leaking but should not');
         });
       });
     });
 
-    it('If reduce function returns 0, resulting value should not be null', function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({
+    it('If reduce function returns 0, resulting value should not be null', function () {
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        return bulk({
           docs: [
             { foo: 'bar' }
           ]
-        }, function () {
-          db.query({
+        }).then(function () {
+          return db.query({
             map: function (doc) {
               emit(doc.foo);
             },
             reduce: function (key, values, rereduce) {
               return 0;
             }
-          }, function (err, data) {
+          }).then(function (data) {
             should.exist(data.rows[0].value);
-            done();
           });
         });
       });
     });
 
-    it('Testing skip with a view', function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({
+    it('Testing skip with a view', function () {
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        return bulk({
           docs: [
             { foo: 'bar' },
             { foo: 'baz' },
             { foo: 'baf' }
           ]
-        }, function () {
-          db.query(function (doc) {
+        }).then(function () {
+          return db.query(function (doc) {
             emit(doc.foo);
-          }, {skip: 1}, function (err, data) {
-            should.not.exist(err, 'Error:' + JSON.stringify(err));
-            data.rows.should.have.length(2);
-            done();
-          });
+          }, {skip: 1});
+        }).then(function (data) {
+          data.rows.should.have.length(2);
         });
       });
     });
 
     it('Map documents on 0/null/undefined/empty string', function (done) {
-      pouch(dbName, function (err, db) {
+      var mapFunction = function (doc) {
+        emit(doc.num);
+      };
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
         var docs = [
           {_id: '0', num: 0},
           {_id: '1', num: 1},
@@ -596,50 +580,40 @@ function tests(dbName) {
           {_id: 'inf', num: Infinity},
           {_id: 'neginf', num: -Infinity}
         ];
-        db.bulkDocs({docs: docs}, function (err) {
-          var mapFunction = function (doc) {
-            emit(doc.num);
-          };
+        return bulk({docs: docs}).then(function () {
+          return db.query(mapFunction, {key: 0});
+        }).then(function (data) {
+          data.rows.should.have.length(1);
+          data.rows[0].id.should.equal('0');
 
-          db.query(mapFunction, {key: 0}, function (err, data) {
-            data.rows.should.have.length(1);
-            data.rows[0].id.should.equal('0');
+          return db.query(mapFunction, {key: ''});
+        }).then(function (data) {
+          data.rows.should.have.length(1);
+          data.rows[0].id.should.equal('empty');
 
-            db.query(mapFunction, {key: ''}, function (err, data) {
-              data.rows.should.have.length(1);
-              data.rows[0].id.should.equal('empty');
+          return db.query(mapFunction, {key: undefined});
+        }).then(function (data) {
+          data.rows.should.have.length(8); // everything
 
-              db.query(mapFunction, {key: undefined}, function (err, data) {
-                data.rows.should.have.length(8); // everything
-
-                // keys that should all resolve to null
-                var emptyKeys = [null, NaN, Infinity, -Infinity];
-                var numDone = 0;
-                emptyKeys.forEach(function (emptyKey) {
-                  db.query(mapFunction, {key: emptyKey}, function (err, data) {
-                    data.rows.should.have.length(5);
-                    data.rows[0].id.should.equal('inf');
-                    data.rows[1].id.should.equal('nan');
-                    data.rows[2].id.should.equal('neginf');
-                    data.rows[3].id.should.equal('null');
-                    data.rows[4].id.should.equal('undef');
-
-                    numDone++;
-                    if (numDone === emptyKeys.length) { // all done
-                      done();
-                    }
-                  });
-                });
-              });
+          // keys that should all resolve to null
+          var emptyKeys = [null, NaN, Infinity, -Infinity];
+          var numDone = 0;
+          return all(emptyKeys.map(function (emptyKey) {
+            return db.query(mapFunction, {key: emptyKey}).then(function (data) {
+              data.rows.map(function (row) {
+                return row.id;
+              }).should.deep.equal(['inf', 'nan', 'neginf', 'null', 'undef']);
             });
-          });
+          }));
         });
       });
     });
 
-    it('Testing query with keys', function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({
+    it('Testing query with keys', function () {
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        var opts = {include_docs: true};
+        return bulk({
           docs: [
             {_id: 'doc_0', field: 0},
             {_id: 'doc_1', field: 1},
@@ -657,89 +631,95 @@ function tests(dbName) {
               }
             }
           ]
-        }, function (err) {
-          var opts = {include_docs: true};
-          db.query("test/mapFunc", opts, function (err, data) {
-            data.rows.should.have.length(7, 'returns all docs');
+        }).then(function () {
+          return db.query("test/mapFunc", opts);
+        }).then(function (data) {
+          data.rows.should.have.length(7, 'returns all docs');
+          opts.keys = [];
+          return db.query("test/mapFunc", opts);
+        }).then(function (data) {
+          data.rows.should.have.length(0, 'returns 0 docs');
 
-            opts.keys = [];
-            db.query("test/mapFunc", opts, function (err, data) {
-              // no docs
-              data.rows.should.have.length(0, 'returns 0 docs');
+          opts.keys = [0];
+          return db.query("test/mapFunc", opts);
+        }).then(function (data) {
+          data.rows.should.have.length(1, 'returns one doc');
+          data.rows[0].doc._id.should.equal('doc_0');
 
-              opts.keys = [0];
-              db.query("test/mapFunc", opts, function (err, data) {
-                data.rows.should.have.length(1, 'returns one doc');
-                data.rows[0].doc._id.should.equal('doc_0');
+          opts.keys = [2, 'foo', 1, 0, null, ''];
+          return db.query("test/mapFunc", opts);
+        }).then(function (data) {
+          // check that the returned ordering fits opts.keys
+          data.rows.should.have.length(7, 'returns 7 docs in correct order');
+          data.rows[0].doc._id.should.equal('doc_2');
+          data.rows[1].doc._id.should.equal('doc_foo');
+          data.rows[2].doc._id.should.equal('doc_1');
+          data.rows[3].doc._id.should.equal('doc_0');
+          data.rows[4].doc._id.should.equal('doc_null');
+          data.rows[5].doc._id.should.equal('doc_undefined');
+          data.rows[6].doc._id.should.equal('doc_empty');
 
-                opts.keys = [2, 'foo', 1, 0, null, ''];
-                db.query("test/mapFunc", opts, function (err, data) {
-                  // check that the returned ordering fits opts.keys
-                  data.rows.should.have.length(7, 'returns 7 docs in correct order');
-                  data.rows[0].doc._id.should.equal('doc_2');
-                  data.rows[1].doc._id.should.equal('doc_foo');
-                  data.rows[2].doc._id.should.equal('doc_1');
-                  data.rows[3].doc._id.should.equal('doc_0');
-                  data.rows[4].doc._id.should.equal('doc_null');
-                  data.rows[5].doc._id.should.equal('doc_undefined');
-                  data.rows[6].doc._id.should.equal('doc_empty');
+          opts.keys = [3, 1, 4, 2];
+          return db.query("test/mapFunc", opts);
+        }).then(function (data) {
+          // nonexistent keys just give us holes in the list
+          data.rows.should.have.length(2, 'returns 2 non-empty docs');
+          data.rows[0].key.should.equal(1);
+          data.rows[0].doc._id.should.equal('doc_1');
+          data.rows[1].key.should.equal(2);
+          data.rows[1].doc._id.should.equal('doc_2');
 
-                  opts.keys = [3, 1, 4, 2];
-                  db.query("test/mapFunc", opts, function (err, data) {
-                    // nonexistent keys are essentially ignored
-                    data.rows.should.have.length(2, 'returns 2 non-empty docs');
-                    data.rows[0].key.should.equal(1);
-                    data.rows[0].doc._id.should.equal('doc_1');
-                    data.rows[1].key.should.equal(2);
-                    data.rows[1].doc._id.should.equal('doc_2');
+          opts.keys = [2, 1, 2, 0, 2, 1];
+          return db.query("test/mapFunc", opts);
+        }).then(function (data) {
+          // with duplicates, we return multiple docs
+          data.rows.should.have.length(6, 'returns 6 docs with duplicates');
+          data.rows[0].doc._id.should.equal('doc_2');
+          data.rows[1].doc._id.should.equal('doc_1');
+          data.rows[2].doc._id.should.equal('doc_2');
+          data.rows[3].doc._id.should.equal('doc_0');
+          data.rows[4].doc._id.should.equal('doc_2');
+          data.rows[5].doc._id.should.equal('doc_1');
 
-                    opts.keys = [2, 1, 2, 0, 2, 1];
-                    db.query("test/mapFunc", opts, function (err, data) {
-                      // with duplicates, we return multiple docs
-                      data.rows.should.have.length(6, 'returns 6 docs with duplicates');
-                      data.rows[0].doc._id.should.equal('doc_2');
-                      data.rows[1].doc._id.should.equal('doc_1');
-                      data.rows[2].doc._id.should.equal('doc_2');
-                      data.rows[3].doc._id.should.equal('doc_0');
-                      data.rows[4].doc._id.should.equal('doc_2');
-                      data.rows[5].doc._id.should.equal('doc_1');
+          opts.keys = [2, 1, 2, 3, 2];
+          return db.query("test/mapFunc", opts);
+        }).then(function (data) {
+          // duplicates and unknowns at the same time, for maximum crazy
+          data.rows.should.have.length(4, 'returns 2 docs with duplicates/unknowns');
+          data.rows[0].doc._id.should.equal('doc_2');
+          data.rows[1].doc._id.should.equal('doc_1');
+          data.rows[2].doc._id.should.equal('doc_2');
+          data.rows[3].doc._id.should.equal('doc_2');
 
-                      opts.keys = [2, 1, 2, 3, 2];
-                      db.query("test/mapFunc", opts, function (err, data) {
-                        // duplicates and unknowns at the same time, for maximum crazy
-                        data.rows.should.have.length(4, 'returns 2 docs with duplicates/unknowns');
-                        data.rows[0].doc._id.should.equal('doc_2');
-                        data.rows[1].doc._id.should.equal('doc_1');
-                        data.rows[2].doc._id.should.equal('doc_2');
-                        data.rows[3].doc._id.should.equal('doc_2');
+          opts.keys = [3];
+          return db.query("test/mapFunc", opts);
+        }).then(function (data) {
+          data.rows.should.have.length(0, 'returns 0 doc due to unknown key');
 
-                        opts.keys = [3];
-                        db.query("test/mapFunc", opts, function (err, data) {
-                          data.rows.should.have.length(0, 'returns 0 doc due to unknown key');
-
-                          opts.include_docs = false;
-                          opts.keys = [3, 2];
-                          db.query("test/mapFunc", opts, function (err, data) {
-                            data.rows.should.have.length(1, 'returns 1 doc due to unknown key');
-                            data.rows[0].id.should.equal('doc_2');
-                            should.not.exist(data.rows[0].doc, 'no doc, since include_docs=false');
-                            done();
-                          });
-                        });
-                      });
-                    });
-                  });
-                });
-              });
-            });
-          });
+          opts.include_docs = false;
+          opts.keys = [3, 2];
+          return db.query("test/mapFunc", opts);
+        }).then(function (data) {
+          data.rows.should.have.length(1, 'returns 1 doc due to unknown key');
+          data.rows[0].id.should.equal('doc_2');
+          should.not.exist(data.rows[0].doc, 'no doc, since include_docs=false');
         });
       });
     });
 
-    it('Testing query with multiple keys, multiple docs', function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({
+    it('Testing query with multiple keys, multiple docs', function () {
+      var mapFunction = function (doc) {
+        emit(doc.field1);
+        emit(doc.field2);
+      };
+      function ids(row) {
+        return row.id;
+      }
+      var opts = {keys: [0, 1, 2]};
+      var spec;
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        return bulk({
           docs: [
             {_id: '0', field1: 0},
             {_id: '1a', field1: 1},
@@ -750,55 +730,29 @@ function tests(dbName) {
             {_id: '3+5', field1: 3, field2: 5},
             {_id: '3+4', field1: 3, field2: 4}
           ]
-        }, function (err) {
-          var mapFunction = function (doc) {
-            emit(doc.field1);
-            emit(doc.field2);
-          };
-          var opts = {keys: [0, 1, 2]};
+        }).then(function () {
+          spec = ['0', '1a', '1b', '1c', '2+3'];
+          return db.query(mapFunction, opts);
+        }).then(function (data) {
+          data.rows.map(ids).should.deep.equal(spec);
 
-          db.query(mapFunction, opts, function (err, data) {
-            data.rows.should.have.length(5);
-            data.rows[0].id.should.equal('0');
-            data.rows[1].id.should.equal('1a');
-            data.rows[2].id.should.equal('1b');
-            data.rows[3].id.should.equal('1c');
-            data.rows[4].id.should.equal('2+3');
-
-            opts.keys = [3, 5, 4, 3];
-
-            db.query(mapFunction, opts, function (err, data) {
-              // ordered by m/r key, then doc id
-              data.rows.should.have.length(10);
-              // 3
-              data.rows[0].id.should.equal('2+3');
-              data.rows[1].id.should.equal('3+4');
-              data.rows[2].id.should.equal('3+5');
-              // 5
-              data.rows[3].id.should.equal('3+5');
-              data.rows[4].id.should.equal('4+5');
-              // 4
-              data.rows[5].id.should.equal('3+4');
-              data.rows[6].id.should.equal('4+5');
-              // 3
-              data.rows[7].id.should.equal('2+3');
-              data.rows[8].id.should.equal('3+4');
-              data.rows[9].id.should.equal('3+5');
-              done();
-            });
-          });
-
+          opts.keys = [3, 5, 4, 3];
+          spec = ['2+3', '3+4', '3+5', '3+5', '4+5', '3+4', '4+5', '2+3', '3+4', '3+5'];
+          return db.query(mapFunction, opts);
+        }).then(function (data) {
+          data.rows.map(ids).should.deep.equal(spec);
         });
       });
     });
-    it('Testing multiple emissions (issue #14)', function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({
+    it('Testing multiple emissions (issue #14)', function () {
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        return bulk({
           docs: [
             {_id: 'doc1', foo : 'foo', bar : 'bar'},
             {_id: 'doc2', foo : 'foo', bar : 'bar'}
           ]
-        }, function (err) {
+        }).then(function () {
           var mapFunction = function (doc) {
             emit(doc.foo);
             emit(doc.foo);
@@ -808,92 +762,98 @@ function tests(dbName) {
           };
           var opts = {keys: ['foo', 'bar']};
 
-          db.query(mapFunction, opts, function (err, data) {
-            data.rows.should.have.length(10);
-
-            data.rows[0].key.should.equal('foo');
-            data.rows[0].id.should.equal('doc1');
-            data.rows[1].key.should.equal('foo');
-            data.rows[1].id.should.equal('doc1');
-
-            data.rows[2].key.should.equal('foo');
-            data.rows[2].id.should.equal('doc2');
-            data.rows[3].key.should.equal('foo');
-            data.rows[3].id.should.equal('doc2');
-
-            data.rows[4].key.should.equal('bar');
-            data.rows[4].id.should.equal('doc1');
-            should.not.exist(data.rows[4].value);
-            data.rows[5].key.should.equal('bar');
-            data.rows[5].id.should.equal('doc1');
-            data.rows[5].value.should.equal('crazy!');
-            data.rows[6].key.should.equal('bar');
-            data.rows[6].id.should.equal('doc1');
-            data.rows[6].value.should.equal('multiple values!');
-
-            data.rows[7].key.should.equal('bar');
-            data.rows[7].id.should.equal('doc2');
-            should.not.exist(data.rows[7].value);
-            data.rows[8].key.should.equal('bar');
-            data.rows[8].id.should.equal('doc2');
-            data.rows[8].value.should.equal('crazy!');
-            data.rows[9].key.should.equal('bar');
-            data.rows[9].id.should.equal('doc2');
-            data.rows[9].value.should.equal('multiple values!');
-
-            done();
-          });
+          return db.query(mapFunction, opts);
         });
+      }).then(function (data) {
+        data.rows.should.have.length(10);
+
+        data.rows[0].key.should.equal('foo');
+        data.rows[0].id.should.equal('doc1');
+        data.rows[1].key.should.equal('foo');
+        data.rows[1].id.should.equal('doc1');
+
+        data.rows[2].key.should.equal('foo');
+        data.rows[2].id.should.equal('doc2');
+        data.rows[3].key.should.equal('foo');
+        data.rows[3].id.should.equal('doc2');
+
+        data.rows[4].key.should.equal('bar');
+        data.rows[4].id.should.equal('doc1');
+        should.not.exist(data.rows[4].value);
+        data.rows[5].key.should.equal('bar');
+        data.rows[5].id.should.equal('doc1');
+        data.rows[5].value.should.equal('crazy!');
+        data.rows[6].key.should.equal('bar');
+        data.rows[6].id.should.equal('doc1');
+        data.rows[6].value.should.equal('multiple values!');
+
+        data.rows[7].key.should.equal('bar');
+        data.rows[7].id.should.equal('doc2');
+        should.not.exist(data.rows[7].value);
+        data.rows[8].key.should.equal('bar');
+        data.rows[8].id.should.equal('doc2');
+        data.rows[8].value.should.equal('crazy!');
+        data.rows[9].key.should.equal('bar');
+        data.rows[9].id.should.equal('doc2');
+        data.rows[9].value.should.equal('multiple values!');
       });
     });
     it('Testing empty startkeys and endkeys', function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({
+      var mapFunction = function (doc) {
+        emit(doc.field);
+      };
+      var opts = {startkey: null, endkey: ''};
+      function ids(row) {
+        return row.id;
+      }
+      var spec;
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        return bulk({
           docs: [
             {_id: 'doc_empty', field: ''},
             {_id: 'doc_null', field: null},
             {_id: 'doc_undefined' /* field undefined */},
             {_id: 'doc_foo', field: 'foo'}
           ]
-        }, function (err) {
-          var mapFunction = function (doc) {
-            emit(doc.field);
-          };
-          var opts = {startkey: null, endkey: ''};
-          db.query(mapFunction, opts, function (err, data) {
-            data.rows.should.have.length(3);
-            data.rows[0].id.should.equal('doc_null');
-            data.rows[1].id.should.equal('doc_undefined');
-            data.rows[2].id.should.equal('doc_empty');
+        }).then(function () {
+          spec = ['doc_null', 'doc_undefined', 'doc_empty'];
+          return db.query(mapFunction, opts);
+        }).then(function (data) {
+          data.rows.map(ids).should.deep.equal(spec);
 
-            opts = {startkey: '', endkey: 'foo'};
-            db.query(mapFunction, opts, function (err, data) {
-              data.rows.should.have.length(2);
-              data.rows[0].id.should.equal('doc_empty');
-              data.rows[1].id.should.equal('doc_foo');
+          opts = {startkey: '', endkey: 'foo'};
+          spec = ['doc_empty', 'doc_foo'];
+          return db.query(mapFunction, opts);
+        }).then(function (data) {
+          data.rows.map(ids).should.deep.equal(spec);
 
-              opts = {startkey: null, endkey: null};
-              db.query(mapFunction, opts, function (err, data) {
-                data.rows.should.have.length(2);
-                data.rows[0].id.should.equal('doc_null');
-                data.rows[1].id.should.equal('doc_undefined');
+          opts = {startkey: null, endkey: null};
+          spec = ['doc_null', 'doc_undefined'];
+          return db.query(mapFunction, opts);
+        }).then(function (data) {
+          data.rows.map(ids).should.deep.equal(spec);
 
-                opts.descending = true;
-                db.query(mapFunction, opts, function (err, data) {
-                  data.rows.should.have.length(2);
-                  data.rows[0].id.should.equal('doc_undefined');
-                  data.rows[1].id.should.equal('doc_null');
-                  done();
-                });
-              });
-            });
-          });
+          opts.descending = true;
+          spec.reverse();
+          return db.query(mapFunction, opts);
+        }).then(function (data) {
+          data.rows.map(ids).should.deep.equal(spec);
         });
       });
     });
     it('Testing ordering with startkey/endkey/key', function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({
+      var mapFunction = function (doc) {
+        emit(doc.field, null);
+      };
+      var opts = {startkey: '1', endkey: '4'};
+      function ids(row) {
+        return row.id;
+      }
+      var spec;
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        return bulk({
           docs: [
             {_id: 'h', field: '4'},
             {_id: 'a', field: '1'},
@@ -904,55 +864,39 @@ function tests(dbName) {
             {_id: 'd', field: '2'},
             {_id: 'b', field: '1'}
           ]
-        }, function (err) {
-          var mapFunction = function (doc) {
-            emit(doc.field, null);
-          };
-          var opts = {startkey: '1', endkey: '4'};
-          db.query(mapFunction, opts, function (err, data) {
-            data.rows.should.have.length(8);
-            // 1
-            data.rows[0].id.should.equal('a');
-            data.rows[1].id.should.equal('b');
-            data.rows[2].id.should.equal('c');
-            // 2
-            data.rows[3].id.should.equal('d');
-            data.rows[4].id.should.equal('e');
-            // 3
-            data.rows[5].id.should.equal('f');
-            // 4
-            data.rows[6].id.should.equal('g');
-            data.rows[7].id.should.equal('h');
+        }).then(function () {
+          spec = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+          return db.query(mapFunction, opts);
+        }).then(function (data) {
+          data.rows.map(ids).should.deep.equal(spec);
 
-            opts = {key: '1'};
-            db.query(mapFunction, opts, function (err, data) {
-              data.rows.should.have.length(3);
-              data.rows[0].id.should.equal('a');
-              data.rows[1].id.should.equal('b');
-              data.rows[2].id.should.equal('c');
+          opts = {key: '1'};
+          spec = ['a', 'b', 'c'];
+          return db.query(mapFunction, opts);
+        }).then(function (data) {
+          data.rows.map(ids).should.deep.equal(spec);
 
-              opts = {key: '2'};
-              db.query(mapFunction, opts, function (err, data) {
-                data.rows.should.have.length(2);
-                data.rows[0].id.should.equal('d');
-                data.rows[1].id.should.equal('e');
+          opts = {key: '2'};
+          spec = ['d', 'e'];
+          return db.query(mapFunction, opts);
+        }).then(function (data) {
+          data.rows.map(ids).should.deep.equal(spec);
 
-                opts.descending = true;
-                db.query(mapFunction, opts, function (err, data) {
-                  data.rows.should.have.length(2);
-                  data.rows[0].id.should.equal('e');
-                  data.rows[1].id.should.equal('d');
-                  done();
-                });
-              });
-            });
-          });
+          opts.descending = true;
+          spec.reverse();
+          return db.query(mapFunction, opts);
+        }).then(function (data) {
+          data.rows.map(ids).should.deep.equal(spec);
         });
       });
     });
     it('Testing ordering with dates', function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({
+      function ids(row) {
+        return row.id;
+      }
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        return bulk({
           docs: [
             {_id: '1969', date: '1969 was when Space Oddity hit'},
             {_id: '1971', date : new Date('1971-12-17T00:00:00.000Z')}, // Hunky Dory was released
@@ -960,25 +904,17 @@ function tests(dbName) {
             {_id: '1977', date: new Date('1977-01-14T00:00:00.000Z')}, // Low was released
             {_id: '1985', date: '1985+ is better left unmentioned'}
           ]
-        }, function (err) {
+        }).then(function () {
           var mapFunction = function (doc) {
             emit(doc.date, null);
           };
-
-          db.query(mapFunction, function (err, data) {
-
-            data.rows.should.have.length(5);
-            data.rows[0].id.should.equal('1969');
-            data.rows[1].id.should.equal('1971');
-            data.rows[2].id.should.equal('1972');
-            data.rows[3].id.should.equal('1977');
-            data.rows[4].id.should.equal('1985');
-            done();
-          });
+          return db.query(mapFunction);
+        }).then(function (data) {
+          data.rows.map(ids).should.deep.equal(['1969', '1971', '1972', '1977', '1985']);
         });
       });
     });
-    it('should error on a fake design', function (done) {
+    it('should error with a callback', function (done) {
       pouch(dbName, function (err, db) {
         db.query('fake/thing', function (err) {
           var a = err.should.exist;
@@ -986,9 +922,13 @@ function tests(dbName) {
         });
       });
     });
-    it('should work with a joined doc', function (done) {
-      pouch(dbName, function (err, db) {
-        db.bulkDocs({
+    it('should work with a joined doc', function () {
+      function change(row) {
+        return [row.key, row.doc._id, row.doc.val];
+      }
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        return bulk({
           docs: [
             {_id: 'a', join: 'b', color: 'green'},
             {_id: 'b', val: 'c'},
@@ -1002,13 +942,10 @@ function tests(dbName) {
               }
             }
           ]
-        }, function (err) {
-          db.query('test/mapFunc', {include_docs: true}, function (err, resp) {
-            resp.rows[0].key.should.equal('green');
-            resp.rows[0].doc._id.should.equal('b');
-            resp.rows[0].doc.val.should.equal('c');
-            done();
-          });
+        }).then(function () {
+          return db.query('test/mapFunc', {include_docs: true});
+        }).then(function (resp) {
+          return change(resp.rows[0]).should.deep.equal(['green', 'b', 'c']);
         });
       });
     });
