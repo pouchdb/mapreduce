@@ -415,7 +415,7 @@ function tests(dbName) {
                 db.get(doc1._id, {conflicts: true}, function (err, res) {
                   should.exist(res._conflicts);
                   db.query(queryFun, function (err, res) {
-                    should.exist(res.rows[0].value);
+                    res.rows[0].value.should.equal(true);
                     pouch.destroy('testdb2', function () {
                       done();
                     });
