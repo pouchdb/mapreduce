@@ -950,6 +950,38 @@ function tests(dbName) {
         });
       });
     });
+    it('opts.keys should work with complex keys', function (done) {
+      pouch(dbName, function (err, db) {
+        db.bulkDocs({
+          docs: [
+            {foo: {key2: 'value2'}},
+            {foo: {key1: 'value1'}},
+            {foo: [0, 0]},
+            {foo: ['test', 1]},
+            {foo: [0, false]}
+          ]
+        }, function (err) {
+          var mapFunction = function (doc) {
+            emit(doc.foo, doc.foo);
+          };
+          var keys = [
+            {key: 'missing'},
+            ['test', 1],
+            {key1: 'value1'},
+            ['missing'],
+            [0, 0]
+          ];
+          var opts = {keys: keys};
+          db.query(mapFunction, opts, function (err, data) {
+            data.rows.should.have.length(3);
+            data.rows[0].value.should.deep.equal(keys[1]);
+            data.rows[1].value.should.deep.equal(keys[2]);
+            data.rows[2].value.should.deep.equal(keys[4]);
+            done();
+          });
+        });
+      });
+    });
     it('Testing ordering with dates', function (done) {
       pouch(dbName, function (err, db) {
         db.bulkDocs({
