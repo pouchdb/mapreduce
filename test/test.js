@@ -686,7 +686,7 @@ function tests(dbName) {
 
                   opts.keys = [3, 1, 4, 2];
                   db.query("test/mapFunc", opts, function (err, data) {
-                    // nonexistent keys just give us holes in the list
+                    // nonexistent keys are essentially ignored
                     data.rows.should.have.length(2, 'returns 2 non-empty docs');
                     data.rows[0].key.should.equal(1);
                     data.rows[0].doc._id.should.equal('doc_1');
