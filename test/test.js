@@ -58,8 +58,37 @@ function tests(dbName) {
         });
       });
     });
-
-    it("Test passing just a function", function () {
+    if (dbName.slice(0, 4) !== "http") {
+      it("with a closure", function () {
+        return pouchPromise(dbName).then(function (db) {
+          var bulk = denodify(db.bulkDocs);
+          return bulk({docs: [
+            {foo: 'bar'},
+            { _id: 'volatile', foo: 'baz' }
+          ]}).then(function () {
+            var queryFun = (function (test) {
+              return function (doc, emit) {
+                if (doc._id === test) {
+                  emit(doc.foo);
+                }
+              };
+            }('volatile'));
+            return db.query(queryFun, {reduce: false});
+          });
+        }).should.become({ 
+          total_rows: 1,
+          offset: 0,
+          rows: [
+            {
+              id: 'volatile',
+              key: 'baz',
+              value: undefined
+            }
+          ]
+        });
+      });
+    }
+    it("Test passing just a function", function (done) {
       return pouchPromise(dbName).then(function (db) {
         var bulk = denodify(db.bulkDocs);
         var get = denodify(db.get);
