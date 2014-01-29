@@ -156,7 +156,7 @@ function MapReduce(db) {
 
   function viewQuery(fun, options) {
     /*jshint evil: true */
-
+    var origMap;
     if (!options.skip) {
       options.skip = 0;
     }
@@ -213,10 +213,18 @@ function MapReduce(db) {
       }
       results.push(viewRow);
     }
-    // ugly way to make sure references to 'emit' in map/reduce bind to the
-    // above emit
-
-    eval('fun.map = ' + fun.map.toString() + ';');
+    if (typeof fun.map === "function" && fun.map.length === 2) {
+      //save a reference to it
+      origMap = fun.map;
+      fun.map = function (doc) {
+        //call it with the emit as the second argument
+        return origMap(doc, emit);
+      };
+    } else {
+      // ugly way to make sure references to 'emit' in map/reduce bind to the
+      // above emit
+      eval('fun.map = ' + fun.map.toString() + ';');
+    }
     if (fun.reduce) {
       if (builtInReduce[fun.reduce]) {
         fun.reduce = builtInReduce[fun.reduce];
