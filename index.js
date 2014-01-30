@@ -367,7 +367,7 @@ function MapReduce(db) {
       callback = opts;
       opts = {};
     }
-
+    opts = opts || {};
     if (callback) {
       opts.complete = callback;
     }
