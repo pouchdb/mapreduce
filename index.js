@@ -3,7 +3,10 @@
 var pouchCollate = require('pouchdb-collate');
 var Promise = require('lie');
 var collate = pouchCollate.collate;
-var normalizeKey = pouchCollate.normalizeKey;
+var processKey = function (key) {
+  // Stringify keys since we want them as map keys (see #35)
+  return JSON.stringify(pouchCollate.normalizeKey(key));
+};
 // This is the first implementation of a basic plugin, we register the
 // plugin object with pouch and it is mixin'd to each database created
 // (regardless of adapter), adapters can override plugins by providing
@@ -31,7 +34,7 @@ function createKeysLookup(keys) {
   var lookup = {};
 
   for (var i = 0, len = keys.length; i < len; i++) {
-    var key = normalizeKey(keys[i]);
+    var key = processKey(keys[i]);
     var val = lookup[key];
     if (typeof val === 'undefined') {
       lookup[key] = i;
@@ -128,7 +131,7 @@ function MapReduce(db) {
     var prelimResults = new Array(keys.length);
 
     inputResults.forEach(function (result) {
-      var idx = keysLookup[normalizeKey(result.key)];
+      var idx = keysLookup[processKey(result.key)];
       if (typeof idx === 'number') {
         addAtIndex(idx, result, prelimResults);
       } else { // array of indices
@@ -186,7 +189,7 @@ function MapReduce(db) {
       }
       if (typeof options.keys !== 'undefined') {
         keysLookup = keysLookup || createKeysLookup(options.keys);
-        if (typeof keysLookup[normalizeKey(key)] === 'undefined') {
+        if (typeof keysLookup[processKey(key)] === 'undefined') {
           return;
         }
       }
