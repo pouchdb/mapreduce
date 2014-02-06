@@ -1014,5 +1014,47 @@ function tests(dbName) {
         });
       });
     });
+    it('sum should work with map and reduce', function () {
+      return pouchPromise(dbName).then(function (db) {
+        var bulk = denodify(db.bulkDocs);
+        return bulk({docs: [
+          {_id: 'a', values: [1, 2]},
+          {_id: 'b', values: [4, 8]},
+          {_id: 'c', values: [16, 32]}
+        ]}).then(function () {
+          return db.query(function (doc) {
+            emit(doc._id, 2 * sum(doc.values));
+          }, {reduce: false});
+        }).then(function (res) {
+          res.rows.map(function (row) {
+            return row.value;
+          }).should.deep.equal([6, 24, 96]);
+          return db.query({
+            map: function (doc) {
+              emit(doc._id, doc.values[0]);
+              emit(doc._id, doc.values[1]);
+            },
+            reduce: function (keys, values) {
+              return 2 * sum(values);
+            }
+          }, {group: true});
+        }).then(function (res) {
+          res.rows.map(function (row) {
+            return row.value;
+          }).should.deep.equal([6, 24, 96]);
+        });
+      });
+    });
+    it('should not modify local variables with eval', function () {
+      return pouchPromise(dbName).then(function (db) {
+        var put = denodify(db.put);
+        return put({_id: 'a', name: 'a'}).then(function () {
+          return db.query(function (doc) {
+            /*global checkComplete:true */
+            checkComplete = null;
+          });
+        });
+      });
+    });
   });
 }

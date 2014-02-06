@@ -48,6 +48,20 @@ function createKeysLookup(keys) {
   return lookup;
 }
 
+// This methods let us bind emit in map function to our internal emit
+// function.
+function rebind(fun, args) {
+  var body = 'var x = (' + fun.toString() + '); return x.apply(null, args2);';
+  var fun2args = ['args2'].concat(Object.keys(args));
+  var fun2 = Function.apply(null, fun2args.concat([body]));
+  var funcs = Object.keys(args).map(function (name) {
+    return args[name];
+  });
+  return function () {
+    return fun2.apply(null, [arguments].concat(funcs));
+  };
+}
+
 function sortByIdAndValue(a, b) {
   // sort by id, then value
   var idCompare = collate(a.id, b.id);
@@ -155,7 +169,6 @@ function MapReduce(db) {
   }
 
   function viewQuery(fun, options) {
-    /*jshint evil: true */
     var origMap;
     if (!options.skip) {
       options.skip = 0;
@@ -214,22 +227,19 @@ function MapReduce(db) {
       results.push(viewRow);
     }
     if (typeof fun.map === "function" && fun.map.length === 2) {
-      //save a reference to it
       origMap = fun.map;
       fun.map = function (doc) {
         //call it with the emit as the second argument
         return origMap(doc, emit);
       };
     } else {
-      // ugly way to make sure references to 'emit' in map/reduce bind to the
-      // above emit
-      eval('fun.map = ' + fun.map.toString() + ';');
+      fun.map = rebind(fun.map, {emit: emit, sum: sum});
     }
     if (fun.reduce) {
       if (builtInReduce[fun.reduce]) {
         fun.reduce = builtInReduce[fun.reduce];
       } else {
-        eval('fun.reduce = ' + fun.reduce.toString() + ';');
+        fun.reduce = rebind(fun.reduce, {sum: sum});
       }
     }
 
@@ -299,7 +309,7 @@ function MapReduce(db) {
       onChange: function (doc) {
         if (!('deleted' in doc) && doc.id[0] !== "_") {
           current = {doc: doc.doc};
-          fun.map.call(this, doc.doc);
+          fun.map(doc.doc);
         }
       },
       complete: function () {
@@ -400,7 +410,7 @@ function MapReduce(db) {
       }
 
       if (typeof fun === 'object') {
-        return viewQuery(fun, opts);
+        return viewQuery({map: fun.map, reduce: fun.reduce}, opts);
       }
 
       if (typeof fun === 'function') {
