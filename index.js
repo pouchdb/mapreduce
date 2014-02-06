@@ -3,6 +3,8 @@
 var pouchCollate = require('pouchdb-collate');
 var Promise = typeof global.Promise === 'function' ? global.Promise : require('lie');
 var collate = pouchCollate.collate;
+var evalFunc = require('./evalfunc');
+var log = Function.prototype.bind.call(console.log, console);
 var processKey = function (key) {
   // Stringify keys since we want them as map keys (see #35)
   return JSON.stringify(pouchCollate.normalizeKey(key));
@@ -155,7 +157,6 @@ function MapReduce(db) {
   }
 
   function viewQuery(fun, options) {
-    /*jshint evil: true */
     var origMap;
     if (!options.skip) {
       options.skip = 0;
@@ -223,13 +224,13 @@ function MapReduce(db) {
     } else {
       // ugly way to make sure references to 'emit' in map/reduce bind to the
       // above emit
-      eval('fun.map = ' + fun.map.toString() + ';');
+      fun.map = evalFunc(fun.map.toString(), emit, sum, log, Array.isArray, JSON.parse);
     }
     if (fun.reduce) {
       if (builtInReduce[fun.reduce]) {
         fun.reduce = builtInReduce[fun.reduce];
       } else {
-        eval('fun.reduce = ' + fun.reduce.toString() + ';');
+        fun.reduce = evalFunc(fun.reduce.toString(), emit, sum, log, Array.isArray, JSON.parse);
       }
     }
 
@@ -273,7 +274,7 @@ function MapReduce(db) {
           ], value: [e.value]});
         });
         groups.forEach(function (e) {
-          e.value = fun.reduce(e.key, e.value);
+          e.value = fun.reduce.call(null, e.key, e.value);
           if (e.value.sumsqr && e.value.sumsqr instanceof MapReduceError) {
             error = e.value;
             return;
@@ -299,7 +300,7 @@ function MapReduce(db) {
       onChange: function (doc) {
         if (!('deleted' in doc) && doc.id[0] !== "_") {
           current = {doc: doc.doc};
-          fun.map.call(this, doc.doc);
+          fun.map.call(null, doc.doc);
         }
       },
       complete: function () {
