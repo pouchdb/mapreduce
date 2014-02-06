@@ -24,6 +24,7 @@
     "beforeEach",
     "afterEach",
     "it",
-    "emit"
+    "emit",
+    "sum"
   ]
 }
