@@ -11,7 +11,11 @@ chai.use(require("chai-as-promised"));
 var denodify = require('lie-denodify');
 var all = require("lie-all");
 describe('local', function () {
-  process.argv.slice(3).forEach(tests);
+  var dbs = process.env.TEST_DB;
+  if (!dbs) {
+    return console.log('No db name specified');
+  }
+  dbs.split(',').forEach(tests);
 });
 var pouchPromise = denodify(pouch);
 function tests(dbName) {
