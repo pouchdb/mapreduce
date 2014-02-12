@@ -1,7 +1,7 @@
 'use strict';
 
 var pouchCollate = require('pouchdb-collate');
-var Promise = require('lie');
+var Promise = typeof global.Promise === 'function' ? global.Promise : require('lie');
 var collate = pouchCollate.collate;
 var processKey = function (key) {
   // Stringify keys since we want them as map keys (see #35)
