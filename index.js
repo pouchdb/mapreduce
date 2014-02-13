@@ -5,7 +5,7 @@ var Promise = typeof global.Promise === 'function' ? global.Promise : require('l
 var collate = pouchCollate.collate;
 var evalFunc = require('./evalfunc');
 var log = (typeof console !== 'undefined') ?
-  Function.prototype.bind.call(console.log, console) : function() {};
+  Function.prototype.bind.call(console.log, console) : function () {};
 var processKey = function (key) {
   // Stringify keys since we want them as map keys (see #35)
   return JSON.stringify(pouchCollate.normalizeKey(key));
@@ -22,12 +22,6 @@ var processKey = function (key) {
 // and storing the result of the map function (possibly using the upcoming
 // extracted adapter functions)
 
-function MapReduceError(name, msg, code) {
-  this.name = name;
-  this.message = msg;
-  this.status =  code;
-}
-MapReduceError.prototype = new Error();
 
 function createKeysLookup(keys) {
   // creates a lookup map for the given keys, so that doing
@@ -91,15 +85,15 @@ var builtInReduce = {
       'count': values.length,
       'sumsqr': (function () {
         var _sumsqr = 0;
+        var error;
         for (var idx in values) {
           if (typeof values[idx] === 'number') {
             _sumsqr += values[idx] * values[idx];
           } else {
-            return new MapReduceError(
-              'builtin _stats function requires map values to be numbers',
-              'invalid_value',
-              500
-            );
+            error =  new Error('builtin _stats function requires map values to be numbers');
+            error.name = 'invalid_value';
+            error.status = 500;
+            return error;
           }
         }
         return _sumsqr;
@@ -276,7 +270,7 @@ function MapReduce(db) {
         });
         groups.forEach(function (e) {
           e.value = fun.reduce.call(null, e.key, e.value);
-          if (e.value.sumsqr && e.value.sumsqr instanceof MapReduceError) {
+          if (e.value.sumsqr && e.value.sumsqr instanceof Error) {
             error = e.value;
             return;
           }

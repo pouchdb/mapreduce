@@ -982,7 +982,7 @@ function tests(dbName) {
     it('should error with a callback', function (done) {
       pouch(dbName, function (err, db) {
         db.query('fake/thing', function (err) {
-          var a = err.should.exist;
+          should.exist(err);
           done();
         });
       });
