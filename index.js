@@ -383,7 +383,15 @@ function MapReduce(db) {
     if (callback) {
       opts.complete = callback;
     }
-    var realCB = opts.complete;
+    var tempCB = opts.complete;
+    var realCB;
+    if (opts.complete) {
+      realCB = function (err, resp) {
+        process.nextTick(function () {
+          tempCB(err, resp);
+        });
+      };
+    } 
     var promise = new Promise(function (resolve, reject) {
       opts.complete = function (err, data) {
         if (err) {
