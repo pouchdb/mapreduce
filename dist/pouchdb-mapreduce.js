@@ -7,7 +7,7 @@ module.exports = function (func, emit, sum, log, isArray, toJSON) {
 };
 
 },{}],2:[function(require,module,exports){
-var global=typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {};'use strict';
+var process=require("__browserify_process"),global=typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {};'use strict';
 
 var pouchCollate = require('pouchdb-collate');
 var Promise = typeof global.Promise === 'function' ? global.Promise : require('lie');
@@ -392,7 +392,15 @@ function MapReduce(db) {
     if (callback) {
       opts.complete = callback;
     }
-    var realCB = opts.complete;
+    var tempCB = opts.complete;
+    var realCB;
+    if (opts.complete) {
+      realCB = function (err, resp) {
+        process.nextTick(function () {
+          tempCB(err, resp);
+        });
+      };
+    } 
     var promise = new Promise(function (resolve, reject) {
       opts.complete = function (err, data) {
         if (err) {
@@ -448,7 +456,62 @@ MapReduce._delete = function () {
 };
 module.exports = MapReduce;
 
-},{"./evalfunc":1,"lie":3,"pouchdb-collate":13}],3:[function(require,module,exports){
+},{"./evalfunc":1,"__browserify_process":3,"lie":4,"pouchdb-collate":14}],3:[function(require,module,exports){
+// shim for using process in browser
+
+var process = module.exports = {};
+
+process.nextTick = (function () {
+    var canSetImmediate = typeof window !== 'undefined'
+    && window.setImmediate;
+    var canPost = typeof window !== 'undefined'
+    && window.postMessage && window.addEventListener
+    ;
+
+    if (canSetImmediate) {
+        return function (f) { return window.setImmediate(f) };
+    }
+
+    if (canPost) {
+        var queue = [];
+        window.addEventListener('message', function (ev) {
+            var source = ev.source;
+            if ((source === window || source === null) && ev.data === 'process-tick') {
+                ev.stopPropagation();
+                if (queue.length > 0) {
+                    var fn = queue.shift();
+                    fn();
+                }
+            }
+        }, true);
+
+        return function nextTick(fn) {
+            queue.push(fn);
+            window.postMessage('process-tick', '*');
+        };
+    }
+
+    return function nextTick(fn) {
+        setTimeout(fn, 0);
+    };
+})();
+
+process.title = 'browser';
+process.browser = true;
+process.env = {};
+process.argv = [];
+
+process.binding = function (name) {
+    throw new Error('process.binding is not supported');
+}
+
+// TODO(shtylman)
+process.cwd = function () { return '/' };
+process.chdir = function (dir) {
+    throw new Error('process.chdir is not supported');
+};
+
+},{}],4:[function(require,module,exports){
 'use strict';
 
 var immediate = require('immediate');
@@ -601,14 +664,14 @@ function execute(callback, value, resolve, reject) {
 
 module.exports = Promise;
 
-},{"immediate":6}],4:[function(require,module,exports){
+},{"immediate":7}],5:[function(require,module,exports){
 "use strict";
 exports.test = function () {
     return false;
 };
-},{}],5:[function(require,module,exports){
-var global=typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {};module.exports = typeof global === "object" && global ? global : this;
 },{}],6:[function(require,module,exports){
+var global=typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {};module.exports = typeof global === "object" && global ? global : this;
+},{}],7:[function(require,module,exports){
 "use strict";
 var types = [
     require("./nextTick"),
@@ -661,7 +724,7 @@ retFunc.clear = function (n) {
 };
 module.exports = retFunc;
 
-},{"./messageChannel":7,"./mutation":8,"./nextTick":4,"./postMessage":9,"./realSetImmediate":10,"./stateChange":11,"./timeout":12}],7:[function(require,module,exports){
+},{"./messageChannel":8,"./mutation":9,"./nextTick":5,"./postMessage":10,"./realSetImmediate":11,"./stateChange":12,"./timeout":13}],8:[function(require,module,exports){
 "use strict";
 var globe = require("./global");
 exports.test = function () {
@@ -675,7 +738,7 @@ exports.install = function (func) {
         channel.port2.postMessage(0);
     };
 };
-},{"./global":5}],8:[function(require,module,exports){
+},{"./global":6}],9:[function(require,module,exports){
 "use strict";
 //based off rsvp
 //https://github.com/tildeio/rsvp.js/blob/master/lib/rsvp/async.js
@@ -701,7 +764,7 @@ exports.install = function (handle) {
         element.setAttribute("drainQueue", "drainQueue");
     };
 };
-},{"./global":5}],9:[function(require,module,exports){
+},{"./global":6}],10:[function(require,module,exports){
 "use strict";
 var globe = require("./global");
 exports.test = function () {
@@ -739,7 +802,7 @@ exports.install = function (func) {
         globe.postMessage(codeWord, "*");
     };
 };
-},{"./global":5}],10:[function(require,module,exports){
+},{"./global":6}],11:[function(require,module,exports){
 "use strict";
 var globe = require("./global");
 exports.test = function () {
@@ -750,7 +813,7 @@ exports.install = function (handle) {
     return globe.setTimeout.bind(globe, handle, 0);
 };
 
-},{"./global":5}],11:[function(require,module,exports){
+},{"./global":6}],12:[function(require,module,exports){
 "use strict";
 var globe = require("./global");
 exports.test = function () {
@@ -775,7 +838,7 @@ exports.install = function (handle) {
         return handle;
     };
 };
-},{"./global":5}],12:[function(require,module,exports){
+},{"./global":6}],13:[function(require,module,exports){
 "use strict";
 exports.test = function () {
     return true;
@@ -786,7 +849,7 @@ exports.install = function (t) {
         setTimeout(t, 0);
     };
 };
-},{}],13:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 'use strict';
 
 exports.collate = function (a, b) {
