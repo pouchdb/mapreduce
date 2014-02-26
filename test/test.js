@@ -3,7 +3,7 @@
 
 var Pouch = require('Pouchdb');
 var Mapreduce = require('../');
-Pouch.plugin('mapreduce', Mapreduce);
+Pouch.plugin(Mapreduce);
 var chai = require('chai');
 var should = chai.should();
 require("mocha-as-promised")();
@@ -148,7 +148,7 @@ function tests(dbName) {
             endkey: 'key3'
           });
         }).then(function (res) {
-          res.rows.should.have.length(2, 'Startkey and endkey todb.gether');
+          res.rows.should.have.length(2, 'Startkey and endkey together');
           return db.query(queryFun, {
             reduce: false,
             startkey: 'key4',
