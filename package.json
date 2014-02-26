@@ -33,12 +33,11 @@
     "chai": "~1.8.1",
     "mocha": "~1.14.0",
     "istanbul": "~0.1.45",
-    "pouchdb": "~1.1.0",
+    "pouchdb": "git://github.com/daleharvey/pouchdb.git#master",
     "browserify": "~2.36.0",
     "jshint": "~2.3.0",
     "mocha-as-promised": "~2.0.0",
     "chai-as-promised": "~4.1.0",
-    "lie-denodify": "~0.1.2",
-    "lie-all": "~0.1.5"
+    "bluebird": "^1.0.7"
   }
 }
