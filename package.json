@@ -38,6 +38,6 @@
     "jshint": "~2.3.0",
     "mocha-as-promised": "~2.0.0",
     "chai-as-promised": "~4.1.0",
-    "bluebird": "^1.0.7"
+    "bluebird": "~1.0.7"
   }
 }
