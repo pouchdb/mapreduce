@@ -26,18 +26,18 @@
     "url": "https://github.com/pouchdb/mapreduce/issues"
   },
   "dependencies": {
-    "lie": "~2.5.1",
+    "lie": "^2.5.3",
     "pouchdb-collate": "~1.0.0"
   },
   "devDependencies": {
-    "chai": "~1.8.1",
-    "mocha": "~1.14.0",
-    "istanbul": "~0.1.45",
-    "pouchdb": "git://github.com/daleharvey/pouchdb.git#master",
+    "bluebird": "^1.0.7",
     "browserify": "~2.36.0",
-    "jshint": "~2.3.0",
-    "mocha-as-promised": "~2.0.0",
+    "chai": "~1.8.1",
     "chai-as-promised": "~4.1.0",
-    "bluebird": "^1.0.7"
+    "istanbul": "~0.1.45",
+    "jshint": "~2.3.0",
+    "mocha": "~1.14.0",
+    "mocha-as-promised": "~2.0.0",
+    "pouchdb": "^2.0.0"
   }
 }
