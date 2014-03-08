@@ -1,7 +1,7 @@
 /*jshint expr:true */
 'use strict';
 
-var Pouch = require('Pouchdb');
+var Pouch = require('pouchdb');
 var Mapreduce = require('../');
 Pouch.plugin(Mapreduce);
 var chai = require('chai');
