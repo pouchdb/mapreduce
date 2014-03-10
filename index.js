@@ -45,8 +45,12 @@ function createKeysLookup(keys) {
   return lookup;
 }
 
-function sortByIdAndValue(a, b) {
-  // sort by id, then value
+// standard sorting for emitted key/values
+function sortByKeyIdValue(a, b) {
+  var keyCompare = collate(a.key, b.key);
+  if (keyCompare !== 0) {
+    return keyCompare;
+  }
   var idCompare = collate(a.id, b.id);
   return idCompare !== 0 ? idCompare : collate(a.value, b.value);
 }
@@ -137,7 +141,7 @@ function mapUsingKeys(inputResults, keys, keysLookup) {
   var outputResults = [];
   prelimResults.forEach(function (result) {
     if (Array.isArray(result)) {
-      outputResults = outputResults.concat(result.sort(sortByIdAndValue));
+      outputResults = outputResults.concat(result.sort(sortByKeyIdValue));
     } else { // single result
       outputResults.push(result);
     }
@@ -156,23 +160,42 @@ function viewQuery(db, fun, options) {
     options.reduce = false;
   }
 
+  var startkeyName = options.descending ? 'endkey' : 'startkey';
+  var endkeyName = options.descending ? 'startkey' : 'endkey';
+
+  if (typeof options[startkeyName] !== 'undefined' &&
+    typeof options[endkeyName] !== 'undefined' &&
+    collate(options[startkeyName], options[endkeyName]) > 0) {
+    return options.complete({
+      status : 400,
+      name : 'query_parse_error',
+      message : 'No rows can match your key range, reverse your ' +
+        'start_key and end_key or set {descending : true}'
+    });
+  }
+
   var results = [];
   var current;
   var num_started = 0;
   var completed = false;
   var keysLookup;
 
+  var totalRows = 0;
+
   function emit(key, val) {
+
+    totalRows++;
+
     var viewRow = {
       id: current.doc._id,
-      key: key,
-      value: val
+      key: pouchCollate.normalizeKey(key),
+      value: pouchCollate.normalizeKey(val)
     };
 
-    if (typeof options.startkey !== 'undefined' && collate(key, options.startkey) < 0) {
+    if (typeof options[startkeyName] !== 'undefined' && collate(key, options[startkeyName]) < 0) {
       return;
     }
-    if (typeof options.endkey !== 'undefined' && collate(key, options.endkey) > 0) {
+    if (typeof options[endkeyName] !== 'undefined' && collate(key, options[endkeyName]) > 0) {
       return;
     }
     if (typeof options.key !== 'undefined' && collate(key, options.key) !== 0) {
@@ -233,18 +256,14 @@ function viewQuery(db, fun, options) {
         // user supplied a keys param, sort by keys
         results = mapUsingKeys(results, options.keys, keysLookup);
       } else { // normal sorting
-        results.sort(function (a, b) {
-          // sort by key, then id
-          var keyCollate = collate(a.key, b.key);
-          return keyCollate !== 0 ? keyCollate : collate(a.id, b.id);
-        });
+        results.sort(sortByKeyIdValue);
       }
       if (options.descending) {
         results.reverse();
       }
       if (options.reduce === false) {
         return options.complete(null, {
-          total_rows: results.length,
+          total_rows: totalRows,
           offset: options.skip,
           rows: ('limit' in options) ? results.slice(options.skip, options.limit + options.skip) :
             (options.skip > 0) ? results.slice(options.skip) : results
@@ -276,7 +295,7 @@ function viewQuery(db, fun, options) {
         return;
       }
       options.complete(null, {
-        total_rows: groups.length,
+        total_rows: totalRows,
         offset: options.skip,
         rows: ('limit' in options) ? groups.slice(options.skip, options.limit + options.skip) :
           (options.skip > 0) ? groups.slice(options.skip) : groups
