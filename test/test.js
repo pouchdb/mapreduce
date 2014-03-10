@@ -32,9 +32,6 @@ function tests(dbName) {
   describe('views', function () {
     it("Test basic view", function () {
       return new Pouch(dbName).then(function (db) {
-        
-        
-        
         return db.bulkDocs({docs: [
           {foo: 'bar'},
           { _id: 'volatile', foo: 'baz' }
@@ -65,7 +62,6 @@ function tests(dbName) {
     if (dbName.slice(0, 4) !== "http") {
       it("with a closure", function () {
         return new Pouch(dbName).then(function (db) {
-          
           return db.bulkDocs({docs: [
             {foo: 'bar'},
             { _id: 'volatile', foo: 'baz' }
@@ -79,7 +75,7 @@ function tests(dbName) {
             }('volatile'));
             return db.query(queryFun, {reduce: false});
           });
-        }).should.become({ 
+        }).should.become({
           total_rows: 1,
           offset: 0,
           rows: [
@@ -94,9 +90,6 @@ function tests(dbName) {
     }
     it("Test passing just a function", function (done) {
       return new Pouch(dbName).then(function (db) {
-        
-        
-        
         return db.bulkDocs({docs: [
           {foo: 'bar'},
           { _id: 'volatile', foo: 'baz' }
@@ -129,7 +122,6 @@ function tests(dbName) {
         }
       };
       return new Pouch(dbName).then(function (db) {
-        
         return db.bulkDocs({docs: [
           {key: 'key1'},
           {key: 'key2'},
@@ -168,7 +160,6 @@ function tests(dbName) {
         }
       };
       return new Pouch(dbName).then(function (db) {
-        
         return db.bulkDocs({docs: [
           {key: 'key1'},
           {key: 'key2'},
@@ -237,7 +228,6 @@ function tests(dbName) {
         }
       };
       return new Pouch(dbName).then(function (db) {
-        
         var docs = values.map(function (x, i) {
           return {_id: (i).toString(), foo: x};
         });
@@ -266,7 +256,6 @@ function tests(dbName) {
         }
       };
       return new Pouch(dbName).then(function (db) {
-        
         return db.bulkDocs({docs: [
           {_id: 'mydoc', foo: 'bar'},
           { doc_id: 'mydoc' }
@@ -281,7 +270,6 @@ function tests(dbName) {
 
     it("No reduce function", function () {
       return new Pouch(dbName).then(function (db) {
-        
         return db.post({foo: 'bar'}).then(function () {
           var queryFun = {
             map: function (doc) {
@@ -295,7 +283,6 @@ function tests(dbName) {
 
     it("Built in _sum reduce function", function () {
       return new Pouch(dbName).then(function (db) {
-        
         return db.bulkDocs({
           docs: [
             { val: 'bar' },
@@ -320,7 +307,6 @@ function tests(dbName) {
 
     it("Built in _count reduce function", function () {
       return new Pouch(dbName).then(function (db) {
-        
         return db.bulkDocs({
           docs: [
             { val: 'bar' },
@@ -345,7 +331,6 @@ function tests(dbName) {
 
     it("Built in _stats reduce function", function () {
       return new Pouch(dbName).then(function (db) {
-        
         return db.bulkDocs({
           docs: [
             { val: 'bar' },
@@ -377,7 +362,6 @@ function tests(dbName) {
 
     it("Built in _stats reduce function should throw an error with a promise", function (done) {
       return new Pouch(dbName).then(function (db) {
-        
         return db.bulkDocs({
           docs: [
             { val: 'bar' },
@@ -401,7 +385,6 @@ function tests(dbName) {
 
     it("No reduce function, passing just a function", function () {
       return new Pouch(dbName).then(function (db) {
-        
         return db.post({foo: 'bar'}).then(function () {
           var queryFun = function (doc) {
             emit('key', 'val');
@@ -415,9 +398,7 @@ function tests(dbName) {
     it('Views should include _conflicts', function () {
       var db2name = 'test2' + Math.random();
       var cleanup = function () {
-        return Pouch.destroy(db2name).catch(function () {
-          
-        });
+        return Pouch.destroy(db2name);
       };
       var doc1 = {_id: '1', foo: 'bar'};
       var doc2 = {_id: '1', foo: 'baz'};
@@ -428,7 +409,7 @@ function tests(dbName) {
         return new Pouch(db2name).then(function (remote) {
           var replicate = Promise.promisify(db.replicate.from, db.replicate);
           return db.post(doc1).then(function () {
-            return remote.post(doc2); 
+            return remote.post(doc2);
           }).then(function () {
             return replicate(remote);
           }).then(function () {
@@ -437,21 +418,14 @@ function tests(dbName) {
             res._conflicts.should.exist;
             return db.query(queryFun);
           }).then(function (res) {
-            return cleanup().then(function () {
-              res.rows[0].value.should.be.true;
-            });
-          }, function (err) {
-            return cleanup().then(function () {
-              throw err;
-            });
-          });
+            res.rows[0].value.should.be.true;
+          }).finally(cleanup);
         });
       });
     });
 
     it("Test view querying with limit option", function () {
       return new Pouch(dbName).then(function (db) {
-        
         return db.bulkDocs({
           docs: [
             { foo: 'bar' },
@@ -470,9 +444,9 @@ function tests(dbName) {
         });
       });
     });
+
     it("Test view querying with limit option and reduce", function () {
       return new Pouch(dbName).then(function (db) {
-        
         return db.bulkDocs({
           docs: [
             { foo: 'bar' },
@@ -495,7 +469,6 @@ function tests(dbName) {
     });
     it("Test view querying with a skip option and reduce", function () {
       return new Pouch(dbName).then(function (db) {
-        
         return db.bulkDocs({
           docs: [
             { foo: 'bar' },
@@ -519,7 +492,6 @@ function tests(dbName) {
 
     it("Query non existing view returns error", function () {
       return new Pouch(dbName).then(function (db) {
-        
         var doc = {
           _id: '_design/barbar',
           views: {
@@ -536,7 +508,6 @@ function tests(dbName) {
 
     it("Special document member _doc_id_rev should never leak outside", function (done) {
       return new Pouch(dbName).then(function (db) {
-        
         return db.bulkDocs({
           docs: [
             { foo: 'bar' }
@@ -555,7 +526,6 @@ function tests(dbName) {
 
     it('If reduce function returns 0, resulting value should not be null', function () {
       return new Pouch(dbName).then(function (db) {
-        
         return db.bulkDocs({
           docs: [
             { foo: 'bar' }
@@ -577,7 +547,6 @@ function tests(dbName) {
 
     it('Testing skip with a view', function () {
       return new Pouch(dbName).then(function (db) {
-        
         return db.bulkDocs({
           docs: [
             { foo: 'bar' },
@@ -599,7 +568,6 @@ function tests(dbName) {
         emit(doc.num);
       };
       return new Pouch(dbName).then(function (db) {
-        
         var docs = [
           {_id: '0', num: 0},
           {_id: '1', num: 1},
@@ -641,7 +609,6 @@ function tests(dbName) {
 
     it('Testing query with keys', function () {
       return new Pouch(dbName).then(function (db) {
-        
         var opts = {include_docs: true};
         return db.bulkDocs({
           docs: [
@@ -748,7 +715,6 @@ function tests(dbName) {
       var opts = {keys: [0, 1, 2]};
       var spec;
       return new Pouch(dbName).then(function (db) {
-        
         return db.bulkDocs({
           docs: [
             {_id: '0', field1: 0},
@@ -776,7 +742,6 @@ function tests(dbName) {
     });
     it('Testing multiple emissions (issue #14)', function () {
       return new Pouch(dbName).then(function (db) {
-        
         return db.bulkDocs({
           docs: [
             {_id: 'doc1', foo : 'foo', bar : 'bar'},
@@ -838,7 +803,6 @@ function tests(dbName) {
       }
       var spec;
       return new Pouch(dbName).then(function (db) {
-        
         return db.bulkDocs({
           docs: [
             {_id: 'doc_empty', field: ''},
@@ -872,6 +836,7 @@ function tests(dbName) {
         });
       });
     });
+
     it('Testing ordering with startkey/endkey/key', function (done) {
       var mapFunction = function (doc) {
         emit(doc.field, null);
@@ -882,7 +847,6 @@ function tests(dbName) {
       }
       var spec;
       return new Pouch(dbName).then(function (db) {
-        
         return db.bulkDocs({
           docs: [
             {_id: 'h', field: '4'},
@@ -920,6 +884,7 @@ function tests(dbName) {
         });
       });
     });
+
     it('opts.keys should work with complex keys', function (done) {
       new Pouch(dbName, function (err, db) {
         db.bulkDocs({
@@ -952,12 +917,12 @@ function tests(dbName) {
         });
       });
     });
+
     it('Testing ordering with dates', function (done) {
       function ids(row) {
         return row.id;
       }
       return new Pouch(dbName).then(function (db) {
-        
         return db.bulkDocs({
           docs: [
             {_id: '1969', date: '1969 was when Space Oddity hit'},
@@ -976,6 +941,7 @@ function tests(dbName) {
         });
       });
     });
+
     it('should error with a callback', function (done) {
       new Pouch(dbName, function (err, db) {
         db.query('fake/thing', function (err) {
@@ -984,12 +950,12 @@ function tests(dbName) {
         });
       });
     });
+
     it('should work with a joined doc', function () {
       function change(row) {
         return [row.key, row.doc._id, row.doc.val];
       }
       return new Pouch(dbName).then(function (db) {
-        
         return db.bulkDocs({
           docs: [
             {_id: 'a', join: 'b', color: 'green'},
