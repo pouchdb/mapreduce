@@ -2,14 +2,37 @@
 
 var pouchCollate = require('pouchdb-collate');
 var Promise = typeof global.Promise === 'function' ? global.Promise : require('lie');
+var TaskQueue = require('./taskqueue');
 var collate = pouchCollate.collate;
+var toIndexableString = pouchCollate.toIndexableString;
+var normalizeKey = pouchCollate.normalizeKey;
 var evalFunc = require('./evalfunc');
 var log = (typeof console !== 'undefined') ?
   Function.prototype.bind.call(console.log, console) : function () {};
+
+var INDEX_TYPE_SEQ = 0;
+var INDEX_TYPE_KEYVALUE = 1;
+var INDEX_TYPE_OUT_OF_BOUNDS = 2;
+
+var updateIndexQueue = new TaskQueue();
+updateIndexQueue.registerTask('updateIndex', updateIndexInner);
+
 var processKey = function (key) {
   // Stringify keys since we want them as map keys (see #35)
-  return JSON.stringify(pouchCollate.normalizeKey(key));
+  return JSON.stringify(normalizeKey(key));
 };
+
+// similar to java's hashCode function, converted to a hex string, adapted from:
+// http://werxltd.com/wp/2010/05/13/javascript-implementation-of-javas-string-hashcode-method/
+function hexHashCode(str) {
+  var hash = 0;
+  for (var i = 0, len = str.length; i < len; i++) {
+    var char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+  }
+  return (hash & 0xfffffff).toString(16);
+}
+
 // This is the first implementation of a basic plugin, we register the
 // plugin object with pouch and it is mixin'd to each database created
 // (regardless of adapter), adapters can override plugins by providing
@@ -77,32 +100,48 @@ var builtInReduce = {
     return sum(values);
   },
 
-  "_count": function (keys, values, rereduce) {
+  "_count": function (keys, values) {
     return values.length;
   },
 
-  "_stats": function (keys, values) {
-    return {
-      'sum': sum(values),
-      'min': Math.min.apply(null, values),
-      'max': Math.max.apply(null, values),
-      'count': values.length,
-      'sumsqr': (function () {
-        var _sumsqr = 0;
-        var error;
-        for (var idx in values) {
-          if (typeof values[idx] === 'number') {
-            _sumsqr += values[idx] * values[idx];
-          } else {
-            error =  new Error('builtin _stats function requires map values to be numbers');
-            error.name = 'invalid_value';
-            error.status = 500;
-            return error;
-          }
+  "_stats": function (keys, values, rereduce) {
+
+    function sumsqr(values) {
+      var _sumsqr = 0;
+      var error;
+      for (var idx in values) {
+        if (typeof values[idx] === 'number') {
+          _sumsqr += values[idx] * values[idx];
+        } else {
+          error =  new Error();
+          error.name = 'invalid_value';
+          error.message = 'builtin _stats function requires map values to be numbers';
+          error.status = 500;
+          return error;
         }
-        return _sumsqr;
-      })()
-    };
+      }
+      return _sumsqr;
+    }
+    if (rereduce) {
+      var result = values[0];
+      for (var i = 1, len = values.length; i < len; i++) {
+        var current = values[i];
+        result.sum += current.sum;
+        result.min = Math.min(result.min, current.min);
+        result.max = Math.max(result.max, current.max);
+        result.count += current.count;
+        result.sumsqr = sumsqr([result.sumsqr, current.sumsqr]);
+      }
+      return result;
+    } else {
+      return {
+        sum     : sum(values),
+        min     : Math.min.apply(null, values),
+        max     : Math.max.apply(null, values),
+        count   : values.length,
+        sumsqr : sumsqr(values)
+      };
+    }
   }
 };
 
@@ -150,6 +189,20 @@ function mapUsingKeys(inputResults, keys, keysLookup) {
   return outputResults;
 }
 
+function checkQueryParseError(options, fun) {
+  var startkeyName = options.descending ? 'endkey' : 'startkey';
+  var endkeyName = options.descending ? 'startkey' : 'endkey';
+
+  if (typeof options[startkeyName] !== 'undefined' &&
+    typeof options[endkeyName] !== 'undefined' &&
+    collate(options[startkeyName], options[endkeyName]) > 0) {
+    return new QueryParseError('No rows can match your key range, reverse your ' +
+        'start_key and end_key or set {descending : true}');
+  } else if (fun.reduce && options.reduce !== false && options.include_docs) {
+    return new QueryParseError('{include_docs:true} is invalid for reduce');
+  }
+}
+
 function viewQuery(db, fun, options) {
   var origMap;
   if (!options.skip) {
@@ -162,17 +215,6 @@ function viewQuery(db, fun, options) {
 
   var startkeyName = options.descending ? 'endkey' : 'startkey';
   var endkeyName = options.descending ? 'startkey' : 'endkey';
-
-  if (typeof options[startkeyName] !== 'undefined' &&
-    typeof options[endkeyName] !== 'undefined' &&
-    collate(options[startkeyName], options[endkeyName]) > 0) {
-    return options.complete({
-      status : 400,
-      name : 'query_parse_error',
-      message : 'No rows can match your key range, reverse your ' +
-        'start_key and end_key or set {descending : true}'
-    });
-  }
 
   var results = [];
   var current;
@@ -270,16 +312,20 @@ function viewQuery(db, fun, options) {
         });
       }
 
+      // TODO: actually implement group/group_level
+      var shouldGroup = options.group || options.group_level;
+
       var groups = [];
       results.forEach(function (e) {
         var last = groups[groups.length - 1];
-        if (last && collate(last.key[0][0], e.key) === 0) {
-          last.key.push([e.key, e.id]);
+        var key = shouldGroup ? e.key : null;
+        if (last && collate(last.key[0][0], key) === 0) {
+          last.key.push([key, e.id]);
           last.value.push(e.value);
           return;
         }
         groups.push({key: [
-          [e.key, e.id]
+          [key, e.id]
         ], value: [e.value]});
       });
       groups.forEach(function (e) {
@@ -294,9 +340,8 @@ function viewQuery(db, fun, options) {
         options.complete(error);
         return;
       }
+      // no total_rows/offset when reducing
       options.complete(null, {
-        total_rows: totalRows,
-        offset: options.skip,
         rows: ('limit' in options) ? groups.slice(options.skip, options.limit + options.skip) :
           (options.skip > 0) ? groups.slice(options.skip) : groups
       });
@@ -383,6 +428,366 @@ function httpQuery(db, fun, opts) {
   }, callback);
 }
 
+function updateIndexSeq(index, seq, cb) {
+  var seqKey = toIndexableString([INDEX_TYPE_SEQ, 'seq']);
+  var keyValues = {};
+  keyValues[seqKey] = seq;
+  index.dbIndex.put('_local/seq', keyValues, function (err) {
+    if (err) {
+      return cb(err);
+    }
+    index.seq = seq;
+    cb(null);
+  });
+}
+
+function getIndex(db, mapFun, reduceFun, cb) {
+  var index = new Index(db, mapFun, reduceFun);
+  var seqKey = toIndexableString([INDEX_TYPE_SEQ, 'seq']);
+  index.dbIndex.get(seqKey, function (err, res) {
+    if (err) {
+      return cb(err);
+    }
+    index.seq = res[0] ? res[0].value : 0;
+    cb(null, index);
+  });
+}
+
+function updateIndex(index, cb) {
+  updateIndexQueue.addTask('updateIndex', [index, cb]);
+  updateIndexQueue.execute();
+}
+
+function updateIndexInner(index, cb) {
+
+  function callMapFun(doc, cb) {
+
+    var docId = doc.doc._id;
+
+    var indexableKeysToKeyValues = {};
+
+    var i = 0;
+    var emit = function (key, value) {
+      var indexableStringKey = toIndexableString([INDEX_TYPE_KEYVALUE, key, docId, value, i++]);
+      indexableKeysToKeyValues[indexableStringKey] = {
+        id  : docId,
+        key : normalizeKey(key),
+        value : normalizeKey(value)
+      };
+    };
+
+    var mapFun = evalFunc(index.mapFun.toString(), emit, sum, log, Array.isArray, JSON.parse);
+
+    var reduceFun;
+    if (index.reduceFun) {
+      if (builtInReduce[index.reduceFun]) {
+        reduceFun = builtInReduce[index.reduceFun];
+      } else {
+        reduceFun = evalFunc(index.reduceFun.toString(), emit, sum, log, Array.isArray, JSON.parse);
+      }
+    }
+
+    mapFun.call(null, doc.doc);
+
+    var keyValues = {};
+
+    Object.keys(indexableKeysToKeyValues).forEach(function (indexableKey) {
+      var keyValue = indexableKeysToKeyValues[indexableKey];
+      if (reduceFun) {
+        keyValue.reduceOutput = reduceFun.call(null, [keyValue.key], [keyValue.value], false);
+      }
+      keyValues[indexableKey] = keyValue;
+    });
+
+    index.dbIndex.put(docId, keyValues, function (err) {
+      if (err) {
+        return cb(err);
+      }
+      cb(null);
+    });
+  }
+
+  function removeMappings(docId, cb) {
+    index.dbIndex.put(docId, {}, function (err) {
+      if (err) {
+        return cb(err);
+      }
+      cb(null);
+    });
+  }
+
+  var lastSeq = index.seq;
+  var gotError;
+  var reportedError;
+  var complete;
+  var numStarted = 0;
+  var numFinished = 0;
+  var checkComplete = function () {
+    if (gotError) {
+      if (!reportedError) {
+        reportedError = true;
+        cb(gotError);
+      }
+    } else if (complete && numStarted === numFinished) {
+      updateIndexSeq(index, lastSeq, function (err) {
+        if (err) {
+          return cb(err);
+        }
+        cb(null);
+      });
+    }
+  };
+
+  index.db.changes({
+    conflicts: true,
+    include_docs: true,
+    since : index.seq,
+    onChange: function (doc) {
+      if (gotError) {
+        return;
+      }
+      if (doc.id[0] === '_') {
+        return;
+      }
+      numStarted++;
+      var myCB = function (err) {
+        if (err) {
+          gotError = err;
+        } else {
+          lastSeq = Math.max(lastSeq, doc.seq);
+          numFinished++;
+          checkComplete();
+        }
+      };
+      if ('deleted' in doc) {
+        removeMappings(doc.id, myCB);
+      } else {
+        callMapFun(doc, myCB);
+      }
+    },
+    complete: function () {
+      complete = true;
+      checkComplete();
+    }
+  });
+}
+
+function reduceIndex(index, results, options) {
+  // we already have the reduced output persisted in the database,
+  // so we only need to rereduce
+
+  // TODO: actually implement group/group_level
+  var shouldGroup = options.group || options.group_level;
+
+  var reduceFun;
+
+  var groups = [];
+  var error;
+  results.forEach(function (e) {
+    var last = groups[groups.length - 1];
+    var key = shouldGroup ? e.key : null;
+    if (last && collate(last.key[0][0], key) === 0) {
+      last.key.push([key, e.id]);
+      last.value.push(e.reduceOutput);
+    } else {
+      groups.push({
+        key: [[key, e.id]],
+        value: [e.reduceOutput]
+      });
+    }
+  });
+  groups.forEach(function (e) {
+    if (e.value.length === 1) {
+      e.value = e.value[0];
+    } else { // need to rereduce
+      if (!reduceFun) {
+        // lazily initialize reduceFun
+        if (builtInReduce[index.reduceFun]) {
+          reduceFun = builtInReduce[index.reduceFun];
+        } else {
+          reduceFun = evalFunc(
+            index.reduceFun.toString(), null, sum, log, Array.isArray, JSON.parse);
+        }
+      }
+      e.value = reduceFun.call(null, null, e.value, true);
+    }
+    if (e.value.sumsqr && e.value.sumsqr.status === 500) {
+      error = e.value;
+      return;
+    }
+    e.key = e.key[0][0];
+  });
+  if (error) {
+    return options.complete(error);
+  }
+  var skip = options.skip || 0;
+  // no total_rows/offset when reducing
+  options.complete(null, {
+    rows: ('limit' in options) ? groups.slice(skip, options.limit + skip) :
+      (skip > 0) ? groups.slice(skip) : groups
+  });
+}
+
+function queryIndex(index, opts) {
+
+  index.dbIndex.count(function (err, count) {
+    if (err) {
+      return opts.complete(err);
+    }
+    var totalRows = Math.max(0, count - 1); // -1 for the stored 'seq' value
+
+    var shouldReduce = index.reduceFun && opts.reduce !== false;
+    var skip = opts.skip || 0;
+
+    function fetchFromIndex(indexOpts, cb) {
+      index.dbIndex.get(indexOpts, function (err, results) {
+        results = results.map(function (result) {
+          return result.value;
+        });
+        if (err) {
+          return cb(err);
+        }
+        cb(null, results);
+      });
+    }
+
+    function onMapResultsReady(results) {
+      if (shouldReduce) {
+        return reduceIndex(index, results, opts);
+      } else {
+        results.forEach(function (result) {
+          delete result.reduceOutput;
+        });
+        var onComplete = function () {
+          opts.complete(null, {
+            total_rows : totalRows,
+            offset : skip,
+            rows : results
+          });
+        };
+        if (opts.include_docs && results.length) {
+          // fetch and attach documents
+          var numDocsFetched = 0;
+          results.forEach(function (viewRow) {
+            var val = viewRow.value;
+            //in this special case, join on _id (issue #106)
+            var dbId = (val && typeof val === 'object' && val._id) || viewRow.id;
+            index.db.get(dbId, function (_, joined_doc) {
+              if (joined_doc) {
+                viewRow.doc = joined_doc;
+              }
+              if (++numDocsFetched === results.length) {
+                onComplete();
+              }
+            });
+          });
+        } else { // don't need the docs
+          onComplete();
+        }
+      }
+    }
+
+    if ('keys' in opts) {
+      if (!opts.keys.length) {
+        return opts.complete(null, {
+          total_rows : totalRows,
+          offset : skip,
+          rows : []
+        });
+      }
+      var keysLookup = createKeysLookup(opts.keys);
+      var keysLookupLen = Object.keys(keysLookup).length;
+      var results = new Array(opts.keys.length);
+      var numKeysFetched = 0;
+      var keysError;
+      Object.keys(keysLookup).forEach(function (key) {
+        var keysLookupIndices = keysLookup[key];
+        var trueKey = JSON.parse(key);
+        var indexOpts = {};
+        indexOpts.startkey = toIndexableString([INDEX_TYPE_KEYVALUE, trueKey]);
+        indexOpts.endkey = toIndexableString([INDEX_TYPE_KEYVALUE, trueKey, {}]);
+        fetchFromIndex(indexOpts, function (err, subResults) {
+          if (err) {
+            keysError = true;
+            return opts.complete(err);
+          } else if (keysError) {
+            return;
+          } else if (typeof keysLookupIndices === 'number') {
+            results[keysLookupIndices] = subResults;
+          } else { // array of indices
+            keysLookupIndices.forEach(function (i) {
+              results[i] = subResults;
+            });
+          }
+          if (++numKeysFetched === keysLookupLen) {
+            // combine results
+            var combinedResults = [];
+            results.forEach(function (result) {
+              combinedResults = combinedResults.concat(result);
+            });
+
+            if (!shouldReduce) {
+              // since we couldn't skip/limit before, do so now
+              combinedResults = ('limit' in opts) ?
+                combinedResults.slice(skip, opts.limit + skip) :
+                (skip > 0) ? combinedResults.slice(skip) : combinedResults;
+            }
+            onMapResultsReady(combinedResults);
+          }
+        });
+      });
+    } else { // normal query, no 'keys'
+
+      var indexOpts = {};
+
+      // don't include the seq, which we stored alongside these
+      var absoluteStart = toIndexableString([INDEX_TYPE_KEYVALUE]);
+      var absoluteEnd = toIndexableString([INDEX_TYPE_OUT_OF_BOUNDS]);
+
+      indexOpts.descending = opts.descending;
+      if (typeof opts.startkey !== 'undefined') {
+        indexOpts.startkey = opts.descending ?
+          toIndexableString([INDEX_TYPE_KEYVALUE, opts.startkey, {}]) :
+          toIndexableString([INDEX_TYPE_KEYVALUE, opts.startkey]);
+      } else {
+        indexOpts.startkey = opts.descending ? absoluteEnd : absoluteStart;
+      }
+      if (typeof opts.endkey !== 'undefined') {
+        indexOpts.endkey = opts.descending ?
+          toIndexableString([INDEX_TYPE_KEYVALUE, opts.endkey]) :
+          toIndexableString([INDEX_TYPE_KEYVALUE, opts.endkey, {}]);
+      } else {
+        indexOpts.endkey = opts.descending ? absoluteStart : absoluteEnd;
+      }
+      if (typeof opts.key !== 'undefined') {
+        var keyStart = toIndexableString([INDEX_TYPE_KEYVALUE, opts.key]);
+        var keyEnd = toIndexableString([INDEX_TYPE_KEYVALUE, opts.key, {}]);
+        if (indexOpts.descending) {
+          indexOpts.endkey = keyStart;
+          indexOpts.startkey = keyEnd;
+        } else {
+          indexOpts.startkey = keyStart;
+          indexOpts.endkey = keyEnd;
+        }
+      }
+
+      if (!shouldReduce) {
+        if (typeof opts.limit === 'number') {
+          indexOpts.limit = opts.limit;
+        }
+        indexOpts.skip = skip;
+      }
+
+      fetchFromIndex(indexOpts, function (err, results) {
+        if (err) {
+          return opts.complete(err);
+        }
+        onMapResultsReady(results);
+      });
+    }
+  });
+}
+
 exports.query = function (fun, opts, callback) {
   var db = this;
   if (typeof opts === 'function') {
@@ -411,6 +816,15 @@ exports.query = function (fun, opts, callback) {
       }
     };
 
+    if (typeof fun === 'object') {
+      // copy to avoid overwriting
+      var funCopy = {};
+      Object.keys(fun).forEach(function (key) {
+        funCopy[key] = fun[key];
+      });
+      fun = funCopy;
+    }
+
     if (db.type() === 'http') {
       if (typeof fun === 'function') {
         return httpQuery(db, {map: fun}, opts);
@@ -418,29 +832,61 @@ exports.query = function (fun, opts, callback) {
       return httpQuery(db, fun, opts);
     }
 
-    if (typeof fun === 'object') {
+    if (typeof fun === 'function') {
+      fun = {map : fun};
+    }
+
+    var parseError = checkQueryParseError(opts, fun);
+    if (parseError) {
+      return opts.complete(parseError);
+    }
+
+    if (typeof fun !== 'string') {
       return viewQuery(db, fun, opts);
     }
 
-    if (typeof fun === 'function') {
-      return viewQuery(db, {map: fun}, opts);
-    }
-
     var parts = fun.split('/');
-    db.get('_design/' + parts[0], function (err, doc) {
+    var designDocName = parts[0];
+    var viewName = parts[1];
+    db.get('_design/' + designDocName, function (err, doc) {
       if (err) {
         opts.complete(err);
         return;
       }
 
-      if (!doc.views[parts[1]]) {
+      var fun = doc.views[viewName];
+
+      if (!fun) {
         opts.complete({ name: 'not_found', message: 'missing_named_view' });
         return;
       }
-      viewQuery(db, {
-        map: doc.views[parts[1]].map,
-        reduce: doc.views[parts[1]].reduce
-      }, opts);
+      var parseError = checkQueryParseError(opts, fun);
+      if (parseError) {
+        return opts.complete(parseError);
+      }
+
+      getIndex(db, fun.map, fun.reduce, function (err, index) {
+        if (err) {
+          return opts.complete(err);
+        } else if (opts.stale === 'ok' || opts.stale === 'update_after') {
+          if (opts.stale === 'update_after') {
+            updateIndex(index, function (err) {
+              if (err) {
+                console.log('index update error!');
+                console.log(err);
+              }
+            });
+          }
+          return queryIndex(index, opts);
+        } else { // stale not ok
+          return updateIndex(index, function (err) {
+            if (err) {
+              return opts.complete(err);
+            }
+            queryIndex(index, opts);
+          });
+        }
+      });
     });
   });
   if (realCB) {
@@ -449,4 +895,29 @@ exports.query = function (fun, opts, callback) {
     }, realCB);
   }
   return promise;
+};
+
+function Index(db, mapFun, reduceFun) {
+  this.db = db;
+  this.name = 'mrview-' + hexHashCode(mapFun.toString() + (reduceFun && reduceFun.toString()));
+  this.dbIndex = db.index(this.name);
+  this.mapFun = mapFun;
+  this.reduceFun = reduceFun;
+}
+
+function QueryParseError(message) {
+  this.status = 400;
+  this.name = 'query_parse_error';
+  this.message = message;
+  this.error = true;
+}
+
+QueryParseError.prototype__proto__ = Error.prototype;
+
+QueryParseError.prototype.toString = function () {
+  return JSON.stringify({
+    status: this.status,
+    name: this.name,
+    message: this.message
+  });
 };
