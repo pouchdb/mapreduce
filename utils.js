@@ -44,6 +44,27 @@ exports.retryUntilWritten = function (db, docId, diffFun, cb) {
   });
 };
 
+// Promise finally util similar to Q.finally
+exports.fin = function (promise, cb) {
+  return promise.then(function (res) {
+    var promise2 = cb();
+    if (typeof promise2.then === 'function') {
+      return promise2.then(function () {
+        return res;
+      });
+    }
+    return res;
+  }, function (reason) {
+    var promise2 = cb();
+    if (typeof promise2.then === 'function') {
+      return promise2.then(function () {
+        throw reason;
+      });
+    }
+    throw reason;
+  });
+};
+
 function tryAndPut(db, doc, diffFun, cb) {
   db.put(doc, function (err) {
     if (err) {
