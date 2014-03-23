@@ -28,9 +28,11 @@
     "url": "https://github.com/pouchdb/mapreduce/issues"
   },
   "dependencies": {
-    "lie": "^2.5.3",
+    "lie": "^2.6.0",
     "pouchdb-collate": "~1.1.0",
-    "inherits": "~2.0.1"
+    "inherits": "~2.0.1",
+    "extend": "^1.2.1",
+    "argsarray": "0.0.1"
   },
   "devDependencies": {
     "bluebird": "^1.0.7",

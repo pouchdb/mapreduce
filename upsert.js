@@ -33,12 +33,4 @@ function tryAndPut(db, doc, diffFun) {
   });
 }
 
-module.exports = function (db, docId, diffFun, cb) {
-  if (typeof cb === 'function') {
-    upsert(db, docId, diffFun).then(function (resp) {
-      cb(null, resp);
-    }, cb);
-  } else {
-    return upsert(db, docId, diffFun);
-  }
-};
+module.exports = upsert;
