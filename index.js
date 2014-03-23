@@ -181,10 +181,10 @@ function checkQueryParseError(options, fun) {
   if (typeof options[startkeyName] !== 'undefined' &&
     typeof options[endkeyName] !== 'undefined' &&
     collate(options[startkeyName], options[endkeyName]) > 0) {
-    return new QueryParseError('No rows can match your key range, reverse your ' +
+    throw new QueryParseError('No rows can match your key range, reverse your ' +
         'start_key and end_key or set {descending : true}');
   } else if (fun.reduce && options.reduce !== false && options.include_docs) {
-    return new QueryParseError('{include_docs:true} is invalid for reduce');
+    throw new QueryParseError('{include_docs:true} is invalid for reduce');
   }
 }
 
@@ -376,8 +376,6 @@ function viewQuery(db, fun, options) {
 }
 
 function httpQuery(db, fun, opts) {
-  var callback = opts.complete;
-
   // List of parameters to add to the PUT request
   var params = [];
   var body;
@@ -416,12 +414,11 @@ function httpQuery(db, fun, opts) {
   // We are referencing a query defined in the design doc
   if (typeof fun === 'string') {
     var parts = fun.split('/');
-    db.request({
+    return db.request({
       method: method,
       url: '_design/' + parts[0] + '/_view/' + parts[1] + params,
       body: body
-    }, callback);
-    return;
+    });
   }
 
   // We are using a temporary view, terrible for performance but good for testing
@@ -432,11 +429,11 @@ function httpQuery(db, fun, opts) {
     return val;
   }));
 
-  db.request({
+  return db.request({
     method: 'POST',
     url: '_temp_view' + params,
     body: queryObject
-  }, callback);
+  });
 }
 
 function destroyView(viewName, adapter, PouchDB, cb) {
@@ -921,112 +918,90 @@ exports.viewCleanup = function (origCallback) {
   return promise;
 };
 
+function queryPromised(db, fun, opts) {
+  if (typeof fun === 'object') {
+    // copy to avoid overwriting
+    var funCopy = {};
+    Object.keys(fun).forEach(function (key) {
+      funCopy[key] = fun[key];
+    });
+    fun = funCopy;
+  }
+
+  if (db.type() === 'http') {
+    if (typeof fun === 'function') {
+      return httpQuery(db, {map: fun}, opts);
+    }
+    return httpQuery(db, fun, opts);
+  }
+
+  if (typeof fun === 'function') {
+    fun = {map : fun};
+  }
+
+  if (typeof fun !== 'string') {
+    // this is going to be replaced with persistent implementation
+    return new Promise(function (fulfill, reject) {
+      checkQueryParseError(opts, fun);
+      opts.complete = function (err, res) {
+        if (!err) {
+          return fulfill(res);
+        }
+        reject(err);
+      };
+      viewQuery(db, fun, opts);
+    });
+  }
+
+  var fullViewName = fun;
+  var parts = fullViewName.split('/');
+  var designDocName = parts[0];
+  var viewName = parts[1];
+  return db.get('_design/' + designDocName).then(function (doc) {
+    var fun = doc.views && doc.views[viewName];
+
+    if (!fun || typeof fun.map !== 'string') {
+      throw { name: 'not_found', message: 'missing_named_view' };
+    }
+    checkQueryParseError(opts, fun);
+
+    return createView(db, fullViewName, fun.map, fun.reduce).then(function (view) {
+      if (opts.stale === 'ok' || opts.stale === 'update_after') {
+        if (opts.stale === 'update_after') {
+          // FIXME:
+          updateView(view, function (err) {
+            if (err) {
+              view.sourceDB.emit('error', err);
+            }
+          });
+        }
+        return utils.promisify(queryView)(view, opts);
+      } else { // stale not ok
+        return utils.promisify(updateView)(view).then(function () {
+          return utils.promisify(queryView)(view, opts);
+        });
+      }
+    });
+  });
+}
+
 exports.query = function (fun, opts, callback) {
-  var db = this;
   if (typeof opts === 'function') {
     callback = opts;
     opts = {};
   }
   opts = utils.clone(opts || {});
-  if (callback) {
-    opts.complete = callback;
-  }
-  var tempCB = opts.complete;
-  var realCB;
-  if (opts.complete) {
-    realCB = function (err, resp) {
-      process.nextTick(function () {
-        tempCB(err, resp);
-      });
-    };
-  } 
-  var promise = new Promise(function (resolve, reject) {
-    opts.complete = function (err, data) {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(data);
-      }
-    };
 
-    if (typeof fun === 'object') {
-      // copy to avoid overwriting
-      var funCopy = {};
-      Object.keys(fun).forEach(function (key) {
-        funCopy[key] = fun[key];
-      });
-      fun = funCopy;
+  var promise = queryPromised(this, fun, opts);
+  promise.then(function (res) {
+    if (callback) {
+      callback(null, res);
     }
-
-    if (db.type() === 'http') {
-      if (typeof fun === 'function') {
-        return httpQuery(db, {map: fun}, opts);
-      }
-      return httpQuery(db, fun, opts);
+  }, function (reason) {
+    if (callback) {
+      callback(reason);
     }
-
-    if (typeof fun === 'function') {
-      fun = {map : fun};
-    }
-
-    var parseError = checkQueryParseError(opts, fun);
-    if (parseError) {
-      return opts.complete(parseError);
-    }
-
-    if (typeof fun !== 'string') {
-      return viewQuery(db, fun, opts);
-    }
-
-    var fullViewName = fun;
-    var parts = fullViewName.split('/');
-    var designDocName = parts[0];
-    var viewName = parts[1];
-    db.get('_design/' + designDocName, function (err, doc) {
-      if (err) {
-        opts.complete(err);
-        return;
-      }
-
-      var fun = doc.views && doc.views[viewName];
-
-      if (!fun || typeof fun.map !== 'string') {
-        opts.complete({ name: 'not_found', message: 'missing_named_view' });
-        return;
-      }
-      var parseError = checkQueryParseError(opts, fun);
-      if (parseError) {
-        return opts.complete(parseError);
-      }
-
-      createView(db, fullViewName, fun.map, fun.reduce, function (err, view) {
-        if (err) {
-          return opts.complete(err);
-        } else if (opts.stale === 'ok' || opts.stale === 'update_after') {
-          if (opts.stale === 'update_after') {
-            updateView(view, function (err) {
-              if (err) {
-                view.sourceDB.emit('error', err);
-              }
-            });
-          }
-          queryView(view, opts, opts.complete);
-        } else { // stale not ok
-          return updateView(view, function (err) {
-            if (err) {
-              return opts.complete(err);
-            }
-            queryView(view, opts, opts.complete);
-          });
-        }
-      });
-    });
   });
-  if (realCB) {
-    promise.then(function (resp) {
-      realCB(null, resp);
-    }, realCB);
-  }
   return promise;
 };
 
