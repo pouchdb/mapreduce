@@ -8,10 +8,11 @@
     "url": "git://github.com/pouchdb/mapreduce.git"
   },
   "scripts": {
-    "do_tests": "TEST_DB=testdb,http://localhost:5984/testdb ./node_modules/istanbul/lib/cli.js test ./node_modules/mocha/bin/_mocha test/test.js",
-    "jshint": "./node_modules/.bin/jshint -c .jshintrc *.js test/*.js",
+    "do_tests": "TEST_DB=testdb,http://localhost:5984/testdb istanbul test ./node_modules/mocha/bin/_mocha test/test.js",
+    "jshint": "jshint -c .jshintrc *.js test/test.js",
     "test": "npm run jshint && npm run do_tests",
-    "build": "mkdir -p dist && browserify index.js -s mapReduce -o dist/pouchdb-mapreduce.js"
+    "build": "mkdir -p dist && browserify index.js -s mapReduce -o dist/pouchdb-mapreduce.js",
+    "build-test": "browserify test/test.js > test/test-bundle.js"
   },
   "keywords": [
     "pouch",
@@ -27,7 +28,8 @@
   },
   "dependencies": {
     "lie": "^2.5.3",
-    "pouchdb-collate": "~1.0.0"
+    "pouchdb-collate": "~1.1.0",
+    "inherits": "~2.0.1"
   },
   "devDependencies": {
     "bluebird": "^1.0.7",
@@ -38,6 +40,9 @@
     "jshint": "~2.3.0",
     "mocha": "~1.14.0",
     "mocha-as-promised": "~2.0.0",
-    "pouchdb": "^2.0.0"
+    "pouchdb": "^2.0.1"
+  },
+  "peerDependencies": {
+    "pouchdb": "^2.0.1"
   }
 }
