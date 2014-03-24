@@ -32,6 +32,9 @@ module.exports = function (sourceDB, fullViewName, mapFun, reduceFun, cb) {
         if (err) {
           return cb(err);
         }
+        PouchDB.on(info.db_name, function () {
+          db.destroy();
+        });
         var view = new View(name, db, sourceDB, mapFun, reduceFun);
         view.db.get('_local/lastSeq', function (err, lastSeqDoc) {
           if (err) {
