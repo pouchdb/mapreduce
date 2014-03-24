@@ -1,6 +1,5 @@
 'use strict';
 
-var PouchDB = require('pouchdb');
 var pouchCollate = require('pouchdb-collate');
 var Promise = typeof global.Promise === 'function' ? global.Promise : require('lie');
 var TaskQueue = require('./taskqueue');
@@ -440,8 +439,8 @@ function httpQuery(db, fun, opts) {
   }, callback);
 }
 
-function destroyView(viewName, adapter, cb) {
-  PouchDB.destroy(viewName, {adapter : adapter}, function (err) {
+function destroyView(viewName, db, cb) {
+  db.constructor.destroy(viewName, {adapter : db.adapter}, function (err) {
     if (err) {
       return cb(err);
     }
@@ -873,7 +872,7 @@ function localViewCleanupInner(db, callback) {
         utils.uniq(dbsToDelete).forEach(function (viewDBName) {
           numStarted++;
 
-          destroyView(viewDBName, db.adapter, function (err) {
+          destroyView(viewDBName, db, function (err) {
             if (err) {
               gotError = err;
             }
