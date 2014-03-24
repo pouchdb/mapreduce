@@ -1,9 +1,9 @@
 'use strict';
 
-var PouchDB = require('pouchdb');
 var utils = require('./utils');
 
 module.exports = function (sourceDB, fullViewName, mapFun, reduceFun, cb) {
+  var PouchDB = sourceDB.constructor;
   sourceDB.info(function (err, info) {
     if (err) {
       return cb(err);
