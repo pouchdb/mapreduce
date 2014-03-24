@@ -25,6 +25,13 @@ exports.inherits = require('inherits');
 
 // this is essentially the "update sugar" function from daleharvey/pouchdb#1388
 exports.retryUntilWritten = function (db, docId, diffFun, cb) {
+  if (docId && typeof docId === 'object') {
+    docId = docId._id;
+  }
+  if (typeof docId !== 'string') {
+    return cb(new Error('doc id is required'));
+  }
+ 
   db.get(docId, function (err, doc) {
     if (err) {
       if (err.name !== 'not_found') {
