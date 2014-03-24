@@ -11,10 +11,13 @@ require("mocha-as-promised")();
 chai.use(require("chai-as-promised"));
 var Promise = require('bluebird');
 var all = Promise.all;
-
+if (process.browser) {
+  process.env.TEST_DB = 'testdb' + Math.random();
+}
 var dbs = process.env.TEST_DB;
 if (!dbs) {
-  return console.log('No db name specified');
+  console.error('No db name specified');
+  process.exit(1);
 }
 dbs.split(',').forEach(function (db) {
   var dbType = /^http/.test(db) ? 'http' : 'local';

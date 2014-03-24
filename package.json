@@ -8,10 +8,11 @@
     "url": "git://github.com/pouchdb/mapreduce.git"
   },
   "scripts": {
-    "do_tests": "TEST_DB=testdb,http://localhost:5984/testdb ./node_modules/istanbul/lib/cli.js test ./node_modules/mocha/bin/_mocha test/test.js",
-    "jshint": "./node_modules/.bin/jshint -c .jshintrc *.js test/*.js",
+    "do_tests": "TEST_DB=testdb,http://localhost:5984/testdb istanbul test ./node_modules/mocha/bin/_mocha test/test.js",
+    "jshint": "jshint -c .jshintrc *.js test/test.js",
     "test": "npm run jshint && npm run do_tests",
-    "build": "mkdir -p dist && browserify index.js -s mapReduce -o dist/pouchdb-mapreduce.js"
+    "build": "mkdir -p dist && browserify index.js -s mapReduce -o dist/pouchdb-mapreduce.js",
+    "build-test": "browserify test/test.js > test/test-bundle.js"
   },
   "keywords": [
     "pouch",
