@@ -27,7 +27,8 @@
   },
   "dependencies": {
     "lie": "^2.5.3",
-    "pouchdb-collate": "~1.0.0"
+    "pouchdb-collate": "~1.1.0",
+    "inherits": "~2.0.1"
   },
   "devDependencies": {
     "bluebird": "^1.0.7",
@@ -39,5 +40,8 @@
     "mocha": "~1.14.0",
     "mocha-as-promised": "~2.0.0",
     "pouchdb": "^2.0.0"
+  },
+  "peerDependencies": {
+    "pouchdb": ">= 2.0.0"
   }
 }
