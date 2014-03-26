@@ -26,7 +26,8 @@ module.exports = function (sourceDB, fullViewName, mapFun, reduceFun, cb) {
         return cb(err);
       }
       var pouchOpts = {
-        adapter : sourceDB.adapter
+        adapter : sourceDB.adapter,
+        auto_compaction : true
       };
       new PouchDB(name, pouchOpts, function (err, db) {
         if (err) {
