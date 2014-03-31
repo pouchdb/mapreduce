@@ -805,15 +805,18 @@ exports.query = function (fun, opts, callback) {
       var newOpts = utils.clone(opts);
       delete newOpts.complete;
 
-      newOpts.origMap = fun.map;
       if (typeof fun.reduce === 'string') {
         fun.reduce = builtInReduce[fun.reduce];
       }
-      newOpts.origReduce = fun.reduce;
+
+      var complete = opts.complete;
+      opts.complete = function () {
+        complete.apply(null, arguments);
+        db.viewCleanup();
+      };
 
       var name = '_temp_view_' + Math.random();
       finish('_design/' + name, fun, name);
-      return;
     } else {
       // persitent view
       var fullViewName = fun;
@@ -843,12 +846,6 @@ exports.query = function (fun, opts, callback) {
 
     function finish(fullViewName, fun, name) {
       createView(db, fullViewName, null, fun.map, fun.reduce, function (err, view) {
-        if (opts.origMap) {
-          view.mapFun = opts.origMap;
-        }
-        if (opts.origReduce) {
-          view.reduceFun = opts.origReduce;
-        }
         if (err) {
           return opts.complete(err);
         } else if (opts.stale === 'ok' || opts.stale === 'update_after') {
