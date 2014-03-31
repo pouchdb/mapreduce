@@ -14,7 +14,7 @@ var utils = require('./utils');
 var TaskQueue = taskQueue.TaskQueue;
 var TaskQueue2 = taskQueue.TaskQueue2;
 var taskQueue = new taskQueue.TaskQueue();
-taskQueue.registerTask('updateView', updateViewInner);
+var updateViewQueue = new TaskQueue2();
 taskQueue.registerTask('queryView', queryViewInner);
 taskQueue.registerTask('localViewCleanup', localViewCleanupInner);
 
@@ -504,12 +504,13 @@ function saveKeyValues(view, indexableKeysToKeyValues, docId, seq) {
   });
 }
 
-function updateView(view, cb) {
-  taskQueue.addTask(view.sourceDB, 'updateView', [view, cb]);
-  taskQueue.execute();
+function updateView(view) {
+  return updateViewQueue.add(function () {
+    return updateViewInner(view);
+  });
 }
 
-function updateViewInner(view, cb) {
+function updateViewInner(view) {
   // bind the emit function once
   var indexableKeysToKeyValues;
   var emitCounter;
@@ -535,12 +536,10 @@ function updateViewInner(view, cb) {
   var lastSeq = view.seq;
   var gotError;
 
-  function processChange(changeInfo, cb) {
+  function processChange(changeInfo) {
     if (changeInfo.id[0] === '_') {
       // FIXME: return generic resolved promise
-      return new Promise(function (fulfill) {
-        fulfill();
-      });
+      return new Promise(function (fulfill) { fulfill(); });
     }
 
     indexableKeysToKeyValues = {};
@@ -555,23 +554,26 @@ function updateViewInner(view, cb) {
     });
   }
   var queue = new TaskQueue2();
-  view.sourceDB.changes({
-    conflicts: true,
-    include_docs: true,
-    since : view.seq,
-    onChange: function (doc) {
-      queue.add(function () {
-        return processChange(doc);
-      });
-    },
-    complete: function () {
-      queue.finish().then(function () {
-        view.seq = lastSeq;
-        cb(null);
-      }, function (reason) {
-        cb(reason);
-      });
-    }
+  // TODO(neojski): https://github.com/daleharvey/pouchdb/issues/1521
+  return new Promise(function (fulfill, reject) {
+    view.sourceDB.changes({
+      conflicts: true,
+      include_docs: true,
+      since : view.seq,
+      onChange: function (doc) {
+        queue.add(function () {
+          return processChange(doc);
+        });
+      },
+      complete: function () {
+        queue.finish().then(function () {
+          view.seq = lastSeq;
+          fulfill();
+        }, function (reason) {
+          reject(reason);
+        });
+      }
+    });
   });
 }
 
@@ -939,16 +941,13 @@ function queryPromised(db, fun, opts) {
     return createView(db, fullViewName, fun.map, fun.reduce).then(function (view) {
       if (opts.stale === 'ok' || opts.stale === 'update_after') {
         if (opts.stale === 'update_after') {
-          // FIXME:
-          updateView(view, function (err) {
-            if (err) {
-              view.sourceDB.emit('error', err);
-            }
+          updateView(view).then(null, function (reason) {
+            view.sourceDB.emit('error', err);
           });
         }
         return utils.promisify(queryView)(view, opts);
       } else { // stale not ok
-        return utils.promisify(updateView)(view).then(function () {
+        return updateView(view).then(function () {
           return utils.promisify(queryView)(view, opts);
         });
       }
