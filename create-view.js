@@ -2,15 +2,15 @@
 
 var utils = require('./utils');
 
-module.exports = function (sourceDB, fullViewName, mapFun, reduceFun, cb) {
+module.exports = function (sourceDB, fullViewName, name, mapFun, reduceFun, cb) {
   sourceDB.info(function (err, info) {
     if (err) {
       return cb(err);
     }
     var PouchDB = sourceDB.constructor;
 
-    var name = info.db_name + '-mrview-' + PouchDB.utils.Crypto.MD5(mapFun.toString() +
-      (reduceFun && reduceFun.toString()));
+    var name = name || (info.db_name + '-mrview-' + PouchDB.utils.Crypto.MD5(mapFun.toString() +
+      (reduceFun && reduceFun.toString())));
 
     // save the view name in the source PouchDB so it can be cleaned up if necessary
     // (e.g. when the _design doc is deleted, remove all associated view data)

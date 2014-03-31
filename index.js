@@ -801,6 +801,7 @@ exports.query = function (fun, opts, callback) {
     }
 
     if (typeof fun !== 'string') {
+      // temp_view
       var newOpts = utils.clone(opts);
       delete newOpts.complete;
 
@@ -810,56 +811,38 @@ exports.query = function (fun, opts, callback) {
       }
       newOpts.origReduce = fun.reduce;
 
-      var ddocName = 'view' + Math.random();
-      var storableViewObj = {
-        map : fun.map.toString()
-      };
-      if (fun.reduce) {
-        storableViewObj.reduce = fun.reduce.toString();
-      }
-      var ddoc = {
-        _id: '_design/' + ddocName,
-        views: {
-          theView: storableViewObj
-        }
-      };
-      db.put(ddoc).then(function (ok) {
-        ddoc._rev = ok.rev;
-        utils.fin(db.query(ddocName + '/theView', newOpts), function () {
-          return db.remove(ddoc).then(function () {
-            return db.viewCleanup();
-          });
-        }).then(function (res) {
-          opts.complete(null, res);
-        }, function (reason) {
-          opts.complete(reason);
-        });
-      });
+      var name = '_temp_view_' + Math.random();
+      finish('_design/' + name, fun, name);
       return;
+    } else {
+      // persitent view
+      var fullViewName = fun;
+      var parts = fullViewName.split('/');
+      var designDocName = parts[0];
+      var viewName = parts[1];
+      db.get('_design/' + designDocName, function (err, doc) {
+        if (err) {
+          opts.complete(err);
+          return;
+        }
+
+        var fun = doc.views && doc.views[viewName];
+
+        if (!fun || typeof fun.map !== 'string') {
+          opts.complete({ name: 'not_found', message: 'missing_named_view' });
+          return;
+        }
+        var parseError = checkQueryParseError(opts, fun);
+        if (parseError) {
+          return opts.complete(parseError);
+        }
+
+        finish(fullViewName, fun, null);
+      });
     }
 
-    var fullViewName = fun;
-    var parts = fullViewName.split('/');
-    var designDocName = parts[0];
-    var viewName = parts[1];
-    db.get('_design/' + designDocName, function (err, doc) {
-      if (err) {
-        opts.complete(err);
-        return;
-      }
-
-      var fun = doc.views && doc.views[viewName];
-
-      if (!fun || typeof fun.map !== 'string') {
-        opts.complete({ name: 'not_found', message: 'missing_named_view' });
-        return;
-      }
-      var parseError = checkQueryParseError(opts, fun);
-      if (parseError) {
-        return opts.complete(parseError);
-      }
-
-      createView(db, fullViewName, fun.map, fun.reduce, function (err, view) {
+    function finish(fullViewName, fun, name) {
+      createView(db, fullViewName, null, fun.map, fun.reduce, function (err, view) {
         if (opts.origMap) {
           view.mapFun = opts.origMap;
         }
@@ -886,7 +869,7 @@ exports.query = function (fun, opts, callback) {
           });
         }
       });
-    });
+    }
   });
   if (realCB) {
     promise.then(function (resp) {
