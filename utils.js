@@ -1,5 +1,7 @@
 'use strict';
 
+var Promise = typeof global.Promise === 'function' ? global.Promise : require('lie');
+
 // uniquify a list, similar to underscore's _.uniq
 exports.uniq = function (arr) {
   var map = {};
@@ -23,8 +25,25 @@ exports.clone = function (obj) {
 
 exports.inherits = require('inherits');
 
+exports.promisify = function (fun) {
+  return function () {
+    var args = arguments;
+    return new Promise(function (fulfill, reject) {
+      function cb(err, res) {
+        if (err) {
+          return reject(err);
+        }
+        fulfill(res);
+      }
+      args[args.length] = cb;
+      args.length++;
+      fun.apply(null, args);
+    });
+  };
+};
+
 // this is essentially the "update sugar" function from daleharvey/pouchdb#1388
-exports.retryUntilWritten = function (db, docId, diffFun, cb) {
+exports.retryUntilWritten = exports.promisify(function (db, docId, diffFun, cb) {
   if (docId && typeof docId === 'object') {
     docId = docId._id;
   }
@@ -42,7 +61,7 @@ exports.retryUntilWritten = function (db, docId, diffFun, cb) {
     doc = diffFun(doc);
     tryAndPut(db, doc, diffFun, cb);
   });
-};
+});
 
 function tryAndPut(db, doc, diffFun, cb) {
   db.put(doc, function (err) {

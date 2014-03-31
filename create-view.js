@@ -2,13 +2,9 @@
 
 var utils = require('./utils');
 
-module.exports = function (sourceDB, fullViewName, mapFun, reduceFun, cb) {
-  sourceDB.info(function (err, info) {
-    if (err) {
-      return cb(err);
-    }
-    var PouchDB = sourceDB.constructor;
-
+module.exports = function (sourceDB, fullViewName, mapFun, reduceFun) {
+  var PouchDB = sourceDB.constructor;
+  return sourceDB.info().then(function (info) {
     var name = info.db_name + '-mrview-' + PouchDB.utils.Crypto.MD5(mapFun.toString() +
       (reduceFun && reduceFun.toString()));
 
@@ -21,30 +17,22 @@ module.exports = function (sourceDB, fullViewName, mapFun, reduceFun, cb) {
       doc._deleted = false;
       return doc;
     }
-    utils.retryUntilWritten(sourceDB, '_local/mrviews', diffFunction, function (err) {
-      if (err) {
-        return cb(err);
-      }
+    return utils.retryUntilWritten(sourceDB, '_local/mrviews', diffFunction).then(function () {
       var pouchOpts = {
         adapter : sourceDB.adapter
       };
-      new PouchDB(name, pouchOpts, function (err, db) {
-        if (err) {
-          return cb(err);
+      return new PouchDB(name, pouchOpts);
+    }).then(function (db) {
+      var view = new View(name, db, sourceDB, mapFun, reduceFun);
+
+      return view.db.get('_local/lastSeq').then(null, function (err) {
+        if (err.name === 'not_found') {
+          return 0;
         }
-        var view = new View(name, db, sourceDB, mapFun, reduceFun);
-        view.db.get('_local/lastSeq', function (err, lastSeqDoc) {
-          if (err) {
-            if (err.name !== 'not_found') {
-              return cb(err);
-            } else {
-              view.seq = 0;
-            }
-          } else {
-            view.seq = lastSeqDoc.seq;
-          }
-          cb(null, view);
-        });
+        throw err;
+      }).then(function (lastSeqDoc) {
+        view.seq = lastSeqDoc.seq;
+        return view;
       });
     });
   });
