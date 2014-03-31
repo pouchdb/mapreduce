@@ -3,7 +3,7 @@
  * Simple task queue to sequentialize actions. Assumes callbacks will eventually fire (once).
  */
 
-module.exports = TaskQueue;
+var Promise = typeof global.Promise === 'function' ? global.Promise : require('lie');
 
 function TaskQueue() {
   this.isReady = true;
@@ -47,3 +47,20 @@ TaskQueue.prototype.addTask = function (emitter, name, parameters) {
   this.queue.push(task);
   return task;
 };
+
+function TaskQueue2() {
+  this.promise = new Promise(function (fulfill) {fulfill();});
+}
+TaskQueue2.prototype.add = function (promiseFactory) {
+  this.promise = this.promise.then(function () {
+    return promiseFactory();
+  });
+  return this.promise;
+};
+TaskQueue2.prototype.finish = function () {
+  return this.promise;
+};
+
+module.exports = {};
+module.exports.TaskQueue = TaskQueue;
+module.exports.TaskQueue2 = TaskQueue2;

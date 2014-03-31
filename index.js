@@ -2,7 +2,7 @@
 
 var pouchCollate = require('pouchdb-collate');
 var Promise = typeof global.Promise === 'function' ? global.Promise : require('lie');
-var TaskQueue = require('./taskqueue');
+var taskQueue = require('./taskqueue');
 var collate = pouchCollate.collate;
 var toIndexableString = pouchCollate.toIndexableString;
 var normalizeKey = pouchCollate.normalizeKey;
@@ -11,7 +11,9 @@ var evalFunc = require('./evalfunc');
 var log = (typeof console !== 'undefined') ?
   Function.prototype.bind.call(console.log, console) : function () {};
 var utils = require('./utils');
-var taskQueue = new TaskQueue();
+var TaskQueue = taskQueue.TaskQueue;
+var TaskQueue2 = taskQueue.TaskQueue2;
+var taskQueue = new taskQueue.TaskQueue();
 taskQueue.registerTask('updateView', updateViewInner);
 taskQueue.registerTask('queryView', queryViewInner);
 taskQueue.registerTask('localViewCleanup', localViewCleanupInner);
@@ -546,20 +548,13 @@ function updateViewInner(view, cb) {
 
   var lastSeq = view.seq;
   var gotError;
-  var complete;
-  var numStarted = 0;
-  var numFinished = 0;
-  function checkComplete() {
-    if (!gotError && complete && numStarted === numFinished) {
-      view.seq = lastSeq;
-      cb(null);
-    }
-  }
 
   function processChange(changeInfo, cb) {
     if (changeInfo.id[0] === '_') {
-      numFinished++;
-      return cb(null);
+      // FIXME: return generic resolved promise
+      return new Promise(function (fulfill) {
+        fulfill();
+      });
     }
 
     indexableKeysToKeyValues = {};
@@ -569,37 +564,34 @@ function updateViewInner(view, cb) {
     if (!('deleted' in changeInfo)) {
       tryCode(view.sourceDB, mapFun, [changeInfo.doc]);
     }
-    saveKeyValues(view, indexableKeysToKeyValues, changeInfo.id, changeInfo.seq, function (err) {
-      if (err) {
-        return cb(err);
-      } else {
-        lastSeq = Math.max(lastSeq, changeInfo.seq);
-        numFinished++;
-        cb(null);
-      }
+    return new Promise(function (fulfill, reject) {
+      saveKeyValues(view, indexableKeysToKeyValues, changeInfo.id, changeInfo.seq, function (err) {
+        if (err) {
+          reject(err);
+        } else {
+          lastSeq = Math.max(lastSeq, changeInfo.seq);
+          fulfill();
+        }
+      });
     });
   }
-  var queue = new TaskQueue();
-  queue.registerTask('processChange', processChange);
-
+  var queue = new TaskQueue2();
   view.sourceDB.changes({
     conflicts: true,
     include_docs: true,
     since : view.seq,
     onChange: function (doc) {
-      numStarted++;
-      queue.addTask(view.sourceDB, 'processChange', [doc, function (err) {
-        if (err && !gotError) {
-          gotError = err;
-          return cb(err);
-        }
-        checkComplete();
-      }]);
-      queue.execute();
+      queue.add(function () {
+        return processChange(doc);
+      });
     },
     complete: function () {
-      complete = true;
-      checkComplete();
+      queue.finish().then(function () {
+        view.seq = lastSeq;
+        cb(null);
+      }, function (reason) {
+        cb(reason);
+      });
     }
   });
 }
