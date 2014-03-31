@@ -842,7 +842,7 @@ exports.query = function (fun, opts, callback) {
     }
 
     function finish(fullViewName, fun, name) {
-      createView(db, fullViewName, null, fun.map, fun.reduce, function (err, view) {
+      createView(db, fullViewName, name, fun.map, fun.reduce, function (err, view) {
         if (err) {
           return opts.complete(err);
         } else if (opts.stale === 'ok' || opts.stale === 'update_after') {

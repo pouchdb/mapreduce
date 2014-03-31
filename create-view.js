@@ -9,7 +9,7 @@ module.exports = function (sourceDB, fullViewName, name, mapFun, reduceFun, cb) 
     }
     var PouchDB = sourceDB.constructor;
 
-    var name = name || (info.db_name + '-mrview-' + PouchDB.utils.Crypto.MD5(mapFun.toString() +
+    name = name || (info.db_name + '-mrview-' + PouchDB.utils.Crypto.MD5(mapFun.toString() +
       (reduceFun && reduceFun.toString())));
 
     // save the view name in the source PouchDB so it can be cleaned up if necessary
