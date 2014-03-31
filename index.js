@@ -447,40 +447,31 @@ function destroyView(viewName, adapter, PouchDB, cb) {
   });
 }
 
-function saveKeyValues(view, indexableKeysToKeyValues, docId, seq, cb) {
-
-  view.db.get('_local/lastSeq', function (err, lastSeqDoc) {
-    if (err) {
-      if (err.name !== 'not_found') {
-        return cb(err);
-      } else {
-        lastSeqDoc = {
-          _id : '_local/lastSeq',
-          seq : 0
+function saveKeyValues(view, indexableKeysToKeyValues, docId, seq) {
+  return view.db.get('_local/lastSeq').then(null, function (reason) {
+    if (reason.name === 'not_found') {
+      return {
+        _id: '_local/lastSeq',
+        seq: 0
+      };
+    }
+    throw reason;
+  }).then(function (lastSeqDoc) {
+    return view.db.get('_local/doc_' + docId).then(null, function (reason) {
+      if (reason.name === 'not_found') {
+        return {
+          _id : '_local/doc_' + docId,
+          keys : []
         };
       }
-    }
-
-    view.db.get('_local/doc_' + docId, function (err, metaDoc) {
-      if (err) {
-        if (err.name !== 'not_found') {
-          return cb(err);
-        } else {
-          metaDoc = {
-            _id : '_local/doc_' + docId,
-            keys : []
-          };
-        }
-      }
-      view.db.allDocs({keys : metaDoc.keys, include_docs : true}, function (err, res) {
-        if (err) {
-          return cb(err);
-        }
+      throw reason;
+    }).then(function (metaDoc) {
+      return view.db.allDocs({keys : metaDoc.keys, include_docs : true}).then(function (res) {
         var kvDocs = res.rows.map(function (row) {
           return row.doc;
         }).filter(function (row) {
-            return row;
-          });
+          return row;
+        });
 
         var oldKeysMap = {};
         kvDocs.forEach(function (kvDoc) {
@@ -507,12 +498,7 @@ function saveKeyValues(view, indexableKeysToKeyValues, docId, seq, cb) {
         lastSeqDoc.seq = seq;
         kvDocs.push(lastSeqDoc);
 
-        view.db.bulkDocs({docs : kvDocs}, function (err) {
-          if (err) {
-            return cb(err);
-          }
-          cb(null);
-        });
+        return view.db.bulkDocs({docs : kvDocs});
       });
     });
   });
@@ -564,15 +550,8 @@ function updateViewInner(view, cb) {
     if (!('deleted' in changeInfo)) {
       tryCode(view.sourceDB, mapFun, [changeInfo.doc]);
     }
-    return new Promise(function (fulfill, reject) {
-      saveKeyValues(view, indexableKeysToKeyValues, changeInfo.id, changeInfo.seq, function (err) {
-        if (err) {
-          reject(err);
-        } else {
-          lastSeq = Math.max(lastSeq, changeInfo.seq);
-          fulfill();
-        }
-      });
+    return saveKeyValues(view, indexableKeysToKeyValues, changeInfo.id, changeInfo.seq).then(function () {
+      lastSeq = Math.max(lastSeq, changeInfo.seq);
     });
   }
   var queue = new TaskQueue2();
