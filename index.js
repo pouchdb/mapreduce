@@ -802,9 +802,6 @@ exports.query = function (fun, opts, callback) {
 
     if (typeof fun !== 'string') {
       // temp_view
-      var newOpts = utils.clone(opts);
-      delete newOpts.complete;
-
       if (typeof fun.reduce === 'string') {
         fun.reduce = builtInReduce[fun.reduce];
       }
