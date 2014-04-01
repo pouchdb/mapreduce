@@ -13,7 +13,7 @@ var pouchCollate = require('pouchdb-collate');
 var Promise = typeof global.Promise === 'function' ? global.Promise : require('lie');
 var collate = pouchCollate.collate;
 var evalFunc = require('./evalfunc');
-var log = (typeof console !== 'undefined') ?
+var log = ((typeof console !== 'undefined') && (typeof console.log === 'function')) ?
   Function.prototype.bind.call(console.log, console) : function() {};
 var processKey = function (key) {
   // Stringify keys since we want them as map keys (see #35)

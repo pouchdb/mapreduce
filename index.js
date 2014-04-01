@@ -8,7 +8,7 @@ var toIndexableString = pouchCollate.toIndexableString;
 var normalizeKey = pouchCollate.normalizeKey;
 var createView = require('./create-view');
 var evalFunc = require('./evalfunc');
-var log = (typeof console !== 'undefined') ?
+var log = ((typeof console !== 'undefined') && (typeof console.log === 'function')) ?
   Function.prototype.bind.call(console.log, console) : function () {};
 var utils = require('./utils');
 var taskQueue = new TaskQueue();
