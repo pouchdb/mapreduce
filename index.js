@@ -186,6 +186,16 @@ function checkQueryParseError(options, fun) {
   } else if (fun.reduce && options.reduce !== false && options.include_docs) {
     return new QueryParseError('{include_docs:true} is invalid for reduce');
   }
+
+  if (options.group_level) {
+    if (typeof options.group_level !== 'number') {
+      return new QueryParseError('Invalid value for integer: "' + options.group_level + '"');
+    }
+    if (options.group_level < 0) {
+      return new QueryParseError('Invalid value for positive integer: ' +
+        '"' + options.group_level + '"');
+    }
+  }
 }
 
 function viewQuery(db, fun, options) {
@@ -304,13 +314,24 @@ function viewQuery(db, fun, options) {
         return returnMapResults();
       }
 
-      // TODO: actually implement group/group_level
+      if (options.group_level === 0) {
+        delete options.group_level;    
+      }
+
       var shouldGroup = options.group || options.group_level;
 
       var groups = [];
+      var lvl = options.group_level;
+      
       results.forEach(function (e) {
         var last = groups[groups.length - 1];
         var key = shouldGroup ? e.key : null;
+
+        // only set group_level for array keys
+        if (shouldGroup && Array.isArray(key) && typeof lvl === 'number') {
+          key = key.length > lvl ? key.slice(0, lvl) : key;
+        }
+
         if (last && collate(last.key[0][0], key) === 0) {
           last.key.push([key, e.id]);
           last.value.push(e.value);
@@ -610,8 +631,11 @@ function updateViewInner(view, cb) {
 function reduceView(view, results, options, cb) {
   // we already have the reduced output persisted in the database,
   // so we only need to rereduce
+  
+  if (options.group_level === 0) {
+    delete options.group_level;    
+  }
 
-  // TODO: actually implement group/group_level
   var shouldGroup = options.group || options.group_level;
 
   var reduceFun;
@@ -624,9 +648,17 @@ function reduceView(view, results, options, cb) {
 
   var error;
   var groups = [];
+  var lvl = options.group_level;
+  
   results.forEach(function (e) {
     var last = groups[groups.length - 1];
     var key = shouldGroup ? e.key : null;
+
+    // only set group_level for array keys
+    if (shouldGroup && Array.isArray(key) && typeof lvl === 'number') {
+      key = key.length > lvl ? key.slice(0, lvl) : key;
+    }
+
     if (last && collate(last.key[0][0], key) === 0) {
       last.key.push([key, e.id]);
       last.value.push(e.value);
