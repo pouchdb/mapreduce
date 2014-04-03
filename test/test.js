@@ -535,11 +535,49 @@ function tests(dbName, dbType, viewType) {
               { foo: ['baz', 'bar'] }
             ]
           }).then(function () {
-            return db.query(queryFun, { group_level: 2, reduce: true});
+            return db.query(queryFun, { group_level: 1, reduce: true});
           }).then(function (res) {
-            res.rows.should.have.length(3, 'Correctly group returned rows');
+            res.rows.should.have.length(2, 'Correctly group returned rows');
+            res.rows[0].key.should.deep.equal(['baz']);
+            res.rows[0].value.should.equal(2);
+            res.rows[1].key.should.deep.equal(['foo']);
+            res.rows[1].value.should.equal(3);
+            return db.query(queryFun, { group_level: 999, reduce: true});
+          }).then(function (res) {
+            res.rows.should.have.length(4, 'Correctly group returned rows');
             res.rows[2].key.should.deep.equal(['foo', 'bar']);
-            res.rows[2].value.should.equal(3);
+            res.rows[2].value.should.equal(2);
+            return db.query(queryFun, { group_level: 0, reduce: true});
+          }).then(function (res) {
+            res.rows.should.have.length(1, 'Correctly group returned rows');
+            res.rows[0].value.should.equal(5);
+          });
+        });
+      });
+    });
+
+    it("Test view querying with invalid group_level options", function () {
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map: function (doc) {
+            emit(doc.foo);
+          },
+          reduce: '_count'
+        }).then(function (queryFun) {
+          return db.query(queryFun, { group_level: -1, reduce: true
+          }).then(function (res) {
+            res.should.not.exist('expected error on invalid group_level');
+          }).catch(function (err) {
+            err.status.should.equal(400);
+            err.name.should.equal('query_parse_error');
+            err.message.should.be.a('string');
+            return db.query(queryFun, { group_level: 'exact', reduce: true});
+          }).then(function (res) {
+            res.should.not.exist('expected error on invalid group_level');
+          }).catch(function (err) {
+            err.status.should.equal(400);
+            err.name.should.equal('query_parse_error');
+            err.message.should.be.a('string');
           });
         });
       });
