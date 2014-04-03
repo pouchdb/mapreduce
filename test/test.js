@@ -518,6 +518,33 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
+    it("Test view querying with group_level option and reduce", function () {
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map: function (doc) {
+            emit(doc.foo);
+          },
+          reduce: '_count'
+        }).then(function (queryFun) {
+          return db.bulkDocs({
+            docs: [
+              { foo: ['foo', 'bar'] },
+              { foo: ['foo', 'bar'] },
+              { foo: ['foo', 'bar', 'baz'] },
+              { foo: ['baz'] },
+              { foo: ['baz', 'bar'] }
+            ]
+          }).then(function () {
+            return db.query(queryFun, { group_level: 2, reduce: true});
+          }).then(function (res) {
+            res.rows.should.have.length(3, 'Correctly group returned rows');
+            res.rows[2].key.should.deep.equal(['foo', 'bar']);
+            res.rows[2].value.should.equal(3);
+          });
+        });
+      });
+    });
+
     it("Test view querying with limit option and reduce", function () {
       return new Pouch(dbName).then(function (db) {
         return createView(db, {
@@ -542,6 +569,7 @@ function tests(dbName, dbType, viewType) {
         });
       });
     });
+
     it("Test view querying with a skip option and reduce", function () {
       return new Pouch(dbName).then(function (db) {
         return createView(db, {
