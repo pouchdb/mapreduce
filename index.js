@@ -186,6 +186,16 @@ function checkQueryParseError(options, fun) {
   } else if (fun.reduce && options.reduce !== false && options.include_docs) {
     return new QueryParseError('{include_docs:true} is invalid for reduce');
   }
+
+  if (options.group_level) {
+    if (typeof options.group_level !== 'number') {
+      return new QueryParseError('Invalid value for integer: "' + options.group_level + '"');
+    }
+    if (options.group_level < 0) {
+      return new QueryParseError('Invalid value for positive integer: ' +
+        '"' + options.group_level + '"');
+    }
+  }
 }
 
 function viewQuery(db, fun, options) {
