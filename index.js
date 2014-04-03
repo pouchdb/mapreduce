@@ -304,17 +304,22 @@ function viewQuery(db, fun, options) {
         return returnMapResults();
       }
 
+      if (options.group_level === 0) {
+        delete options.group_level;    
+      }
+
       var shouldGroup = options.group || options.group_level;
 
       var groups = [];
+      var lvl = options.group_level;
+      
       results.forEach(function (e) {
         var last = groups[groups.length - 1];
         var key = shouldGroup ? e.key : null;
-        var lvl = options.group_level;
 
         // only set group_level for array keys
-        if (shouldGroup && Array.isArray(key) && !isNaN(lvl)) {
-          key.length = key.length > lvl ? lvl : key.length;
+        if (shouldGroup && Array.isArray(key) && typeof lvl === 'number') {
+          key = key.length > lvl ? key.slice(0, lvl) : key;
         }
 
         if (last && collate(last.key[0][0], key) === 0) {
@@ -616,6 +621,10 @@ function updateViewInner(view, cb) {
 function reduceView(view, results, options, cb) {
   // we already have the reduced output persisted in the database,
   // so we only need to rereduce
+  
+  if (options.group_level === 0) {
+    delete options.group_level;    
+  }
 
   var shouldGroup = options.group || options.group_level;
 
@@ -629,14 +638,15 @@ function reduceView(view, results, options, cb) {
 
   var error;
   var groups = [];
+  var lvl = options.group_level;
+  
   results.forEach(function (e) {
     var last = groups[groups.length - 1];
     var key = shouldGroup ? e.key : null;
-    var lvl = options.group_level;
 
     // only set group_level for array keys
-    if (shouldGroup && Array.isArray(key) && !isNaN(lvl)) {
-      key.length = key.length > lvl ? lvl : key.length;
+    if (shouldGroup && Array.isArray(key) && typeof lvl === 'number') {
+      key = key.length > lvl ? key.slice(0, lvl) : key;
     }
 
     if (last && collate(last.key[0][0], key) === 0) {
