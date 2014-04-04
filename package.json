@@ -40,7 +40,7 @@
     "jshint": "~2.3.0",
     "mocha": "~1.14.0",
     "mocha-as-promised": "~2.0.0",
-    "pouchdb": "^2.0.0"
+    "pouchdb": "pouchdb/pouchdb"
   },
   "peerDependencies": {
     "pouchdb": ">= 2.0.0"
