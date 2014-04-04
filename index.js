@@ -701,7 +701,11 @@ function localViewCleanupInner(db, callback) {
         var viewsToStatus = {};
         res.rows.forEach(function (row) {
           Object.keys(docsToViews[row.key]).forEach(function (viewName) {
-            var viewDBNames = Object.keys(metaDoc.views[row.key.substring(8) + '/' + viewName]);
+            var viewObj = metaDoc.views[row.key.substring(8) + '/' + viewName];
+            if (!viewObj) {
+              return;
+            }
+            var viewDBNames = Object.keys(viewObj);
             // design doc deleted, or view function nonexistent
             var statusIsGood = row.doc && row.doc.views && row.doc.views[viewName];
             viewDBNames.forEach(function (viewDBName) {
@@ -823,20 +827,38 @@ exports.query = function (fun, opts, callback) {
 
     if (typeof fun !== 'string') {
       // temp_view
+
+      var randomizer = Math.round(Math.random()  * 1000000) + 1;
+
       if (typeof fun.reduce === 'string') {
         fun.reduce = builtInReduce[fun.reduce];
       }
 
-      var complete = opts.complete;
-      opts.complete = function () {
-        complete.apply(null, arguments);
-        db.viewCleanup();
+      var createViewOpts = {
+        db : db,
+        viewName : 'temp_view/temp_view',
+        map : fun.map,
+        reduce : fun.reduce,
+        randomizer : randomizer
       };
-
-      var name = '_temp_view_' + Math.random();
-      finish('_design/' + name, fun, name);
+      createView(createViewOpts, function (err, view) {
+        if (err) {
+          return opts.complete(err);
+        }
+        function cleanupAndComplete(err, res) {
+          view.db.destroy(function (destroyErr) {
+            opts.complete(destroyErr || err, res);
+          });
+        }
+        updateView(view, function (err) {
+          if (err) {
+            return cleanupAndComplete(err);
+          }
+          queryView(view, opts, cleanupAndComplete);
+        });
+      });
     } else {
-      // persitent view
+      // persistent view
       var fullViewName = fun;
       var parts = fullViewName.split('/');
       var designDocName = parts[0];
@@ -858,31 +880,33 @@ exports.query = function (fun, opts, callback) {
           return opts.complete(parseError);
         }
 
-        finish(fullViewName, fun, null);
-      });
-    }
-
-    function finish(fullViewName, fun, name) {
-      createView(db, fullViewName, name, fun.map, fun.reduce, function (err, view) {
-        if (err) {
-          return opts.complete(err);
-        } else if (opts.stale === 'ok' || opts.stale === 'update_after') {
-          if (opts.stale === 'update_after') {
-            updateView(view, function (err) {
-              if (err) {
-                view.sourceDB.emit('error', err);
-              }
-            });
-          }
-          queryView(view, opts, opts.complete);
-        } else { // stale not ok
-          return updateView(view, function (err) {
-            if (err) {
-              return opts.complete(err);
+        var createViewOpts = {
+          db : db,
+          viewName : fullViewName,
+          map : fun.map,
+          reduce : fun.reduce
+        };
+        createView(createViewOpts, function (err, view) {
+          if (err) {
+            return opts.complete(err);
+          } else if (opts.stale === 'ok' || opts.stale === 'update_after') {
+            if (opts.stale === 'update_after') {
+              updateView(view, function (err) {
+                if (err) {
+                  view.sourceDB.emit('error', err);
+                }
+              });
             }
             queryView(view, opts, opts.complete);
-          });
-        }
+          } else { // stale not ok
+            return updateView(view, function (err) {
+              if (err) {
+                return opts.complete(err);
+              }
+              queryView(view, opts, opts.complete);
+            });
+          }
+        });
       });
     }
   });

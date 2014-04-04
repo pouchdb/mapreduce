@@ -3,21 +3,28 @@
 var utils = require('./utils');
 var upsert = require('./upsert');
 
-module.exports = function (sourceDB, fullViewName, name, mapFun, reduceFun, cb) {
+module.exports = function (opts, cb) {
+  var sourceDB = opts.db;
+  var viewName = opts.viewName;
+  var mapFun = opts.map;
+  var reduceFun = opts.reduce;
+  var randomizer = opts.randomizer;
+
   sourceDB.info(function (err, info) {
     if (err) {
       return cb(err);
     }
     var PouchDB = sourceDB.constructor;
     var depDbName = info.db_name + '-mrview-' + PouchDB.utils.Crypto.MD5(
-      mapFun.toString() + (reduceFun && reduceFun.toString()));
+      mapFun.toString() + (reduceFun && reduceFun.toString())) +
+      (randomizer && randomizer.toString());
 
     // save the view name in the source PouchDB so it can be cleaned up if necessary
     // (e.g. when the _design doc is deleted, remove all associated view data)
     function diffFunction(doc) {
       doc.views = doc.views || {};
-      doc.views[fullViewName] = doc.views[fullViewName] || {};
-      doc.views[fullViewName][depDbName] = true;
+      doc.views[viewName] = doc.views[viewName] || {};
+      doc.views[viewName][depDbName] = true;
       doc._deleted = false;
       return doc;
     }
