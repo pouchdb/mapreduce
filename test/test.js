@@ -1751,6 +1751,7 @@ function tests(dbName, dbType, viewType) {
     });
 
     it('should properly query custom reduce functions', function () {
+      this.timeout(5000);
       return new Pouch(dbName).then(function (db) {
         return createView(db, {
           map : function (doc) {
