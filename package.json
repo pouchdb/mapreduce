@@ -12,7 +12,8 @@
     "jshint": "jshint -c .jshintrc *.js test/test.js",
     "test": "npm run jshint && npm run do_tests",
     "build": "mkdir -p dist && browserify index.js -s mapReduce -o dist/pouchdb-mapreduce.js",
-    "build-test": "browserify test/test.js > test/test-bundle.js"
+    "dev": "browserify test/test.js > test/test-bundle.js && npm run dev-server",
+    "dev-server": "./bin/dev-server.js"
   },
   "keywords": [
     "pouch",
@@ -36,11 +37,15 @@
     "browserify": "~2.36.0",
     "chai": "~1.8.1",
     "chai-as-promised": "~4.1.0",
+    "corsproxy": "~0.2.13",
+    "http-proxy": "~0.10.3",
+    "http-server": "~0.5.5",
     "istanbul": "~0.1.45",
     "jshint": "~2.3.0",
     "mocha": "~1.14.0",
     "mocha-as-promised": "~2.0.0",
-    "pouchdb": "pouchdb/pouchdb"
+    "pouchdb": "pouchdb/pouchdb",
+    "watchify": "~0.4.1"
   },
   "peerDependencies": {
     "pouchdb": ">= 2.0.0"

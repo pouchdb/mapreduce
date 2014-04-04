@@ -11,14 +11,14 @@ require("mocha-as-promised")();
 chai.use(require("chai-as-promised"));
 var Promise = require('bluebird');
 var all = Promise.all;
+var dbs;
 if (process.browser) {
-  process.env.TEST_DB = 'testdb' + Math.random();
+  dbs = 'testdb' + Math.random() +
+    ',http://localhost:2021/testdb' + Math.round(Math.random() * 100000);
+} else {
+  dbs = process.env.TEST_DB;
 }
-var dbs = process.env.TEST_DB;
-if (!dbs) {
-  console.error('No db name specified');
-  process.exit(1);
-}
+
 dbs.split(',').forEach(function (db) {
   var dbType = /^http/.test(db) ? 'http' : 'local';
   var viewTypes = ['persisted', 'temp'];
