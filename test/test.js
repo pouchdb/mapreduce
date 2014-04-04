@@ -76,11 +76,13 @@ function tests(dbName, dbType, viewType) {
   });
   afterEach(function () {
     return new Pouch(dbName).then(function (db) {
-      if (viewType === 'temp') {
-        return Pouch.destroy(dbName);
-      }
-      return db.get('_design/theViewDoc').then(function (designDoc) {
-        return db.remove(designDoc).then(function () {
+      var opts = {startkey : '_design', endkey: '`', include_docs : true};
+      return db.allDocs(opts).then(function (designDocs) {
+        var docs = designDocs.rows.map(function (row) {
+          row.doc._deleted = true;
+          return row.doc;
+        });
+        return db.bulkDocs({docs : docs}).then(function () {
           return db.viewCleanup();
         }).then(function (res) {
           res.ok.should.equal(true);

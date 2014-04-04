@@ -198,204 +198,6 @@ function checkQueryParseError(options, fun) {
   }
 }
 
-function viewQuery(db, fun, options) {
-  var origMap;
-  if (!options.skip) {
-    options.skip = 0;
-  }
-
-  if (!fun.reduce) {
-    options.reduce = false;
-  }
-
-  var startkeyName = options.descending ? 'endkey' : 'startkey';
-  var endkeyName = options.descending ? 'startkey' : 'endkey';
-
-  var results = [];
-  var current;
-  var num_started = 0;
-  var completed = false;
-  var keysLookup;
-
-  var totalRows = 0;
-
-  function emit(key, val) {
-
-    totalRows++;
-
-    var viewRow = {
-      id: current.doc._id,
-      key: pouchCollate.normalizeKey(key),
-      value: pouchCollate.normalizeKey(val)
-    };
-
-    if (typeof options[startkeyName] !== 'undefined' && collate(key, options[startkeyName]) < 0) {
-      return;
-    }
-    if (typeof options[endkeyName] !== 'undefined' && collate(key, options[endkeyName]) > 0) {
-      return;
-    }
-    if (typeof options.key !== 'undefined' && collate(key, options.key) !== 0) {
-      return;
-    }
-    if (typeof options.keys !== 'undefined') {
-      keysLookup = keysLookup || createKeysLookup(options.keys);
-      if (typeof keysLookup[processKey(key)] === 'undefined') {
-        return;
-      }
-    }
-
-    num_started++;
-    if (options.include_docs) {
-      //in this special case, join on _id (issue #106)
-      if (val && typeof val === 'object' && val._id) {
-        db.get(val._id,
-          function (_, joined_doc) {
-            if (joined_doc) {
-              viewRow.doc = joined_doc;
-            }
-            results.push(viewRow);
-            checkComplete();
-          });
-        return;
-      } else {
-        viewRow.doc = current.doc;
-      }
-    }
-    results.push(viewRow);
-  }
-  if (typeof fun.map === "function" && fun.map.length === 2) {
-    //save a reference to it
-    origMap = fun.map;
-    fun.map = function (doc) {
-      //call it with the emit as the second argument
-      return origMap(doc, emit);
-    };
-  } else {
-    // ugly way to make sure references to 'emit' in map/reduce bind to the
-    // above emit
-    fun.map = evalFunc(fun.map.toString(), emit, sum, log, Array.isArray, JSON.parse);
-  }
-  if (fun.reduce) {
-    if (builtInReduce[fun.reduce]) {
-      fun.reduce = builtInReduce[fun.reduce];
-    } else {
-      fun.reduce = evalFunc(fun.reduce.toString(), emit, sum, log, Array.isArray, JSON.parse);
-    }
-  }
-
-  function returnMapResults() {
-    if (options.descending) {
-      results.reverse();
-    }
-    return options.complete(null, {
-      total_rows: totalRows,
-      offset: options.skip,
-      rows: sliceResults(results, options.limit, options.skip)
-    });
-  }
-
-  var mapError;
-
-  //only proceed once all documents are mapped and joined
-  function checkComplete() {
-
-    var error;
-
-    if (completed && (mapError || results.length === num_started)) {
-      if (typeof options.keys !== 'undefined' && results.length) {
-        // user supplied a keys param, sort by keys
-        results = mapUsingKeys(results, options.keys, keysLookup);
-      } else { // normal sorting
-        results.sort(sortByKeyIdValue);
-      }
-
-      if (options.reduce === false) {
-        return returnMapResults();
-      }
-
-      if (options.group_level === 0) {
-        delete options.group_level;    
-      }
-
-      var shouldGroup = options.group || options.group_level;
-
-      var groups = [];
-      var lvl = options.group_level;
-      
-      results.forEach(function (e) {
-        var last = groups[groups.length - 1];
-        var key = shouldGroup ? e.key : null;
-
-        // only set group_level for array keys
-        if (shouldGroup && Array.isArray(key) && typeof lvl === 'number') {
-          key = key.length > lvl ? key.slice(0, lvl) : key;
-        }
-
-        if (last && collate(last.key[0][0], key) === 0) {
-          last.key.push([key, e.id]);
-          last.value.push(e.value);
-          return;
-        }
-        groups.push({key: [
-          [key, e.id]
-        ], value: [e.value]});
-      });
-      var reduceError;
-      groups.forEach(function (e) {
-        if (reduceError) {
-          return;
-        }
-        var reduceTry = tryCode(db, fun.reduce, [e.key, e.value, false]);
-        if (reduceTry.error) {
-          reduceError = true;
-        } else {
-          e.value = reduceTry.output;
-        }
-        if (e.value.sumsqr && e.value.sumsqr instanceof Error) {
-          error = e.value;
-          return;
-        }
-        e.key = e.key[0][0];
-      });
-      if (reduceError) {
-        returnMapResults();
-        return;
-      }
-      if (error) {
-        options.complete(error);
-        return;
-      }
-      if (options.descending) {
-        groups.reverse();
-      }
-      // no total_rows/offset when reducing
-      options.complete(null, {
-        rows : sliceResults(groups, options.limit, options.skip)
-      });
-    }
-  }
-
-
-  db.changes({
-    conflicts: true,
-    include_docs: true,
-    onChange: function (doc) {
-      if (!('deleted' in doc) && doc.id[0] !== "_" && !mapError) {
-        current = {doc: doc.doc};
-        var mapTry = tryCode(db, fun.map, [doc.doc]);
-        if (mapTry.error) {
-          mapError = true;
-        }
-      }
-    },
-    complete: function () {
-      completed = true;
-      checkComplete();
-    }
-  });
-}
-
 function httpQuery(db, fun, opts) {
   var callback = opts.complete;
 
@@ -560,12 +362,25 @@ function updateViewInner(view, cb) {
     };
   }
 
-  var mapFun = evalFunc(view.mapFun.toString(), emit, sum, log, Array.isArray, JSON.parse);
+  var mapFun;
+  // for temp_views one can use emit(doc, emit), see #38
+  if (typeof view.mapFun === "function" && view.mapFun.length === 2) {
+    var origMap = view.mapFun;
+    mapFun = function (doc) {
+      return origMap(doc, emit);
+    };
+  } else {
+    mapFun = evalFunc(view.mapFun.toString(), emit, sum, log, Array.isArray, JSON.parse);
+  }
 
   var reduceFun;
   if (view.reduceFun) {
-    reduceFun = builtInReduce[view.reduceFun] ||
-      evalFunc(view.reduceFun.toString(), emit, sum, log, Array.isArray, JSON.parse);
+    if (typeof view.reduceFun === "function") {
+      reduceFun = view.reduceFun;
+    } else {
+      reduceFun = builtInReduce[view.reduceFun] ||
+        evalFunc(view.reduceFun.toString(), emit, sum, log, Array.isArray, JSON.parse);
+    }
   }
 
   var lastSeq = view.seq;
@@ -1007,31 +822,48 @@ exports.query = function (fun, opts, callback) {
     }
 
     if (typeof fun !== 'string') {
-      return viewQuery(db, fun, opts);
+      // temp_view
+      if (typeof fun.reduce === 'string') {
+        fun.reduce = builtInReduce[fun.reduce];
+      }
+
+      var complete = opts.complete;
+      opts.complete = function () {
+        complete.apply(null, arguments);
+        db.viewCleanup();
+      };
+
+      var name = '_temp_view_' + Math.random();
+      finish('_design/' + name, fun, name);
+    } else {
+      // persitent view
+      var fullViewName = fun;
+      var parts = fullViewName.split('/');
+      var designDocName = parts[0];
+      var viewName = parts[1];
+      db.get('_design/' + designDocName, function (err, doc) {
+        if (err) {
+          opts.complete(err);
+          return;
+        }
+
+        var fun = doc.views && doc.views[viewName];
+
+        if (!fun || typeof fun.map !== 'string') {
+          opts.complete({ name: 'not_found', message: 'missing_named_view' });
+          return;
+        }
+        var parseError = checkQueryParseError(opts, fun);
+        if (parseError) {
+          return opts.complete(parseError);
+        }
+
+        finish(fullViewName, fun, null);
+      });
     }
 
-    var fullViewName = fun;
-    var parts = fullViewName.split('/');
-    var designDocName = parts[0];
-    var viewName = parts[1];
-    db.get('_design/' + designDocName, function (err, doc) {
-      if (err) {
-        opts.complete(err);
-        return;
-      }
-
-      var fun = doc.views && doc.views[viewName];
-
-      if (!fun || typeof fun.map !== 'string') {
-        opts.complete({ name: 'not_found', message: 'missing_named_view' });
-        return;
-      }
-      var parseError = checkQueryParseError(opts, fun);
-      if (parseError) {
-        return opts.complete(parseError);
-      }
-
-      createView(db, fullViewName, fun.map, fun.reduce, function (err, view) {
+    function finish(fullViewName, fun, name) {
+      createView(db, fullViewName, name, fun.map, fun.reduce, function (err, view) {
         if (err) {
           return opts.complete(err);
         } else if (opts.stale === 'ok' || opts.stale === 'update_after') {
@@ -1052,7 +884,7 @@ exports.query = function (fun, opts, callback) {
           });
         }
       });
-    });
+    }
   });
   if (realCB) {
     promise.then(function (resp) {
