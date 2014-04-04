@@ -3,13 +3,12 @@
 var utils = require('./utils');
 var upsert = require('./upsert');
 
-module.exports = function (sourceDB, fullViewName, mapFun, reduceFun, cb) {
+module.exports = function (sourceDB, fullViewName, name, mapFun, reduceFun, cb) {
   sourceDB.info(function (err, info) {
     if (err) {
       return cb(err);
     }
     var PouchDB = sourceDB.constructor;
-
     var depDbName = info.db_name + '-mrview-' + PouchDB.utils.Crypto.MD5(
       mapFun.toString() + (reduceFun && reduceFun.toString()));
 
