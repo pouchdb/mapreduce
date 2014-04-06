@@ -241,7 +241,7 @@ function httpQuery(db, fun, opts) {
     var parts = fun.split('/');
     db.request({
       method: method,
-      url: '_design/' + parts[0] + '/_view/' + parts[1] + params,
+      url: parts.length === 2 ? '_design/' + parts[0] + '/_view/' + parts[1] + params : fun + params,
       body: body
     }, callback);
     return;
