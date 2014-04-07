@@ -528,7 +528,11 @@ function queryPromised(db, fun, opts) {
       var fun = doc.views && doc.views[viewName];
 
       if (!fun || typeof fun.map !== 'string') {
-        throw { name: 'not_found', message: 'missing_named_view' };
+        var error = new Error('ddoc ' + designDocName + ' has no view named ' +
+          viewName);
+        error.name = 'not_found';
+        error.status = 400;
+        throw error;
       }
       checkQueryParseError(opts, fun);
 
