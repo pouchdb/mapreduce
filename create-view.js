@@ -1,6 +1,5 @@
 'use strict';
 
-var utils = require('./utils');
 var upsert = require('./upsert');
 
 module.exports = function (opts, cb) {
