@@ -778,7 +778,7 @@ exports.query = function (fun, opts, callback) {
     callback = opts;
     opts = {};
   }
-  opts = utils.clone(opts || {});
+  opts = db.constructor.extend(true, {}, opts || {});
   if (callback) {
     opts.complete = callback;
   }
