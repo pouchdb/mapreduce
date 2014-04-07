@@ -66,27 +66,6 @@ function createKeysLookup(keys) {
   return lookup;
 }
 
-// standard sorting for emitted key/values
-function sortByKeyIdValue(a, b) {
-  var keyCompare = collate(a.key, b.key);
-  if (keyCompare !== 0) {
-    return keyCompare;
-  }
-  var idCompare = collate(a.id, b.id);
-  return idCompare !== 0 ? idCompare : collate(a.value, b.value);
-}
-function addAtIndex(idx, result, prelimResults) {
-  var val = prelimResults[idx];
-  if (typeof val === 'undefined') {
-    prelimResults[idx] = result;
-  } else if (!Array.isArray(val)) {
-    // same key for multiple docs, need to preserve document order, so create array
-    prelimResults[idx] = [val, result];
-  } else { // existing array
-    val.push(result);
-  }
-}
-
 function sum(values) {
   return values.reduce(function (a, b) {
     return a + b;
@@ -139,39 +118,6 @@ function addHttpParam(paramName, opts, params, asJson) {
     }
     params.push(paramName + '=' + val);
   }
-}
-
-function mapUsingKeys(inputResults, keys, keysLookup) {
-  // create a new results array from the given array,
-  // ensuring that the following conditions are respected:
-  // 1. docs are ordered by key, then doc id
-  // 2. docs can appear >1 time in the list, if their key is specified >1 time
-  // 3. keys can be unknown, in which case there's just a hole in the returned array
-
-  var prelimResults = new Array(keys.length);
-
-  inputResults.forEach(function (result) {
-    var idx = keysLookup[processKey(result.key)];
-    if (typeof idx === 'number') {
-      addAtIndex(idx, result, prelimResults);
-    } else { // array of indices
-      idx.forEach(function (subIdx) {
-        addAtIndex(subIdx, result, prelimResults);
-      });
-    }
-  });
-
-  // flatten the array, remove nulls, sort by doc ids
-  var outputResults = [];
-  prelimResults.forEach(function (result) {
-    if (Array.isArray(result)) {
-      outputResults = outputResults.concat(result.sort(sortByKeyIdValue));
-    } else { // single result
-      outputResults.push(result);
-    }
-  });
-
-  return outputResults;
 }
 
 function checkQueryParseError(options, fun) {
@@ -371,16 +317,6 @@ function updateViewInner(view, cb) {
     };
   } else {
     mapFun = evalFunc(view.mapFun.toString(), emit, sum, log, Array.isArray, JSON.parse);
-  }
-
-  var reduceFun;
-  if (view.reduceFun) {
-    if (typeof view.reduceFun === "function") {
-      reduceFun = view.reduceFun;
-    } else {
-      reduceFun = builtInReduce[view.reduceFun] ||
-        evalFunc(view.reduceFun.toString(), emit, sum, log, Array.isArray, JSON.parse);
-    }
   }
 
   var lastSeq = view.seq;
