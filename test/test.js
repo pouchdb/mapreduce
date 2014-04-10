@@ -246,7 +246,8 @@ function tests(dbName, dbType, viewType) {
     });
 
     it("Test basic view collation", function () {
-
+      this.timeout(10000);
+      
       var values = [];
 
       // special values sort before all other types
@@ -778,6 +779,7 @@ function tests(dbName, dbType, viewType) {
     });
 
     it('Map documents on 0/null/undefined/empty string', function () {
+      this.timeout(10000);
       return new Pouch(dbName).then(function (db) {
         return createView(db, {
           map : function (doc) {
@@ -824,6 +826,7 @@ function tests(dbName, dbType, viewType) {
     });
 
     it('Testing query with keys', function () {
+      this.timeout(10000);
       return new Pouch(dbName).then(function (db) {
         return createView(db, {
           map: function (doc) {
@@ -1488,6 +1491,8 @@ function tests(dbName, dbType, viewType) {
       });
     });
     it('should correctly return results when reducing or not reducing', function () {
+      this.timeout(10000);
+
       function keyValues(row) {
         return { key: row.key, value: row.value };
       }
@@ -1750,7 +1755,7 @@ function tests(dbName, dbType, viewType) {
     });
 
     it('should properly query custom reduce functions', function () {
-      this.timeout(5000);
+      this.timeout(10000);
       return new Pouch(dbName).then(function (db) {
         return createView(db, {
           map : function (doc) {
