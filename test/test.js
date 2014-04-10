@@ -1932,6 +1932,43 @@ function tests(dbName, dbType, viewType) {
 
     if (viewType === 'persisted') {
 
+      it('should delete duplicate indexes', function () {
+        this.timeout(5000);
+        var docs = [];
+        for (var i = 0; i < 10; i++) {
+          docs.push(
+            {
+              _id : '_design/view' + i,
+              views : {
+                view : {
+                  map : "function(doc){emit('foo');}"
+                }
+              }
+            }
+          );
+        }
+        return new Pouch(dbName).then(function (db) {
+          return db.bulkDocs({docs : docs}).then(function (responses) {
+            var tasks = [];
+            for (var i = 0; i < docs.length; i++) {
+              /* jshint loopfunc:true */
+              docs[i]._rev = responses[i].rev;
+              tasks.push(db.query('view' + i + '/view'));
+            }
+            return all(tasks);
+          }).then(function (res) {
+            console.log(res);
+            docs.forEach(function (doc) {
+              doc._deleted = true;
+            });
+            return db.bulkDocs({docs : docs});
+          }).then(function (res) {
+            console.log(res);
+            return db.viewCleanup();
+          });
+        });
+      });
+
       it('should handle user errors in design doc names', function () {
         return new Pouch(dbName).then(function (db) {
           return db.put({
