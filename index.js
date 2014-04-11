@@ -11,15 +11,7 @@ var evalFunc = require('./evalfunc');
 var log = ((typeof console !== 'undefined') && (typeof console.log === 'function')) ?
   Function.prototype.bind.call(console.log, console) : function () {};
 var utils = require('./utils');
-var taskQueue = new TaskQueue();
-taskQueue.registerTask('updateView', updateViewInner);
-taskQueue.registerTask('queryView', queryViewInner);
-taskQueue.registerTask('localViewCleanup', localViewCleanupInner);
-
-var processKey = function (key) {
-  // Stringify keys since we want them as map keys (see #35)
-  return JSON.stringify(normalizeKey(key));
-};
+var mainQueue = new TaskQueue();
 
 function tryCode(db, fun, args) {
   // emit an event if there was an error thrown by a map/reduce function.
@@ -42,28 +34,6 @@ function sliceResults(results, limit, skip) {
     return results.slice(skip);
   }
   return results;
-}
-
-function createKeysLookup(keys) {
-  // creates a lookup map for the given keys, so that doing
-  // query() with keys doesn't become an O(n * m) operation
-  // lookup values are typically integer indexes, but may
-  // map to a list of integers, since keys can be duplicated
-  var lookup = {};
-
-  for (var i = 0, len = keys.length; i < len; i++) {
-    var key = processKey(keys[i]);
-    var val = lookup[key];
-    if (typeof val === 'undefined') {
-      lookup[key] = i;
-    } else if (typeof val === 'number') {
-      lookup[key] = [val, i];
-    } else { // array
-      val.push(i);
-    }
-  }
-
-  return lookup;
 }
 
 function sum(values) {
@@ -94,7 +64,7 @@ var builtInReduce = {
           error = new Error('builtin _stats function requires map values to be numbers');
           error.name = 'invalid_value';
           error.status = 500;
-          return error;
+          throw error;
         }
       }
       return _sumsqr;
@@ -127,26 +97,23 @@ function checkQueryParseError(options, fun) {
   if (typeof options[startkeyName] !== 'undefined' &&
     typeof options[endkeyName] !== 'undefined' &&
     collate(options[startkeyName], options[endkeyName]) > 0) {
-    return new QueryParseError('No rows can match your key range, reverse your ' +
+    throw new QueryParseError('No rows can match your key range, reverse your ' +
         'start_key and end_key or set {descending : true}');
   } else if (fun.reduce && options.reduce !== false && options.include_docs) {
-    return new QueryParseError('{include_docs:true} is invalid for reduce');
+    throw new QueryParseError('{include_docs:true} is invalid for reduce');
   }
-
   if (options.group_level) {
     if (typeof options.group_level !== 'number') {
-      return new QueryParseError('Invalid value for integer: "' + options.group_level + '"');
+      throw new QueryParseError('Invalid value for integer: "' + options.group_level + '"');
     }
     if (options.group_level < 0) {
-      return new QueryParseError('Invalid value for positive integer: ' +
+      throw new QueryParseError('Invalid value for positive integer: ' +
         '"' + options.group_level + '"');
     }
   }
 }
 
 function httpQuery(db, fun, opts) {
-  var callback = opts.complete;
-
   // List of parameters to add to the PUT request
   var params = [];
   var body;
@@ -171,11 +138,7 @@ function httpQuery(db, fun, opts) {
   // see http://wiki.apache.org/couchdb/HTTP_view_API#Querying_Options
   if (typeof opts.keys !== 'undefined') {
     method = 'POST';
-    if (typeof fun === 'string') {
-      body = JSON.stringify({keys: opts.keys});
-    } else { // fun is {map : mapfun}, so append to this
-      fun.keys = opts.keys;
-    }
+    body = {keys: opts.keys};
   }
 
   // Format the list of parameters into a valid URI query string
@@ -185,72 +148,47 @@ function httpQuery(db, fun, opts) {
   // We are referencing a query defined in the design doc
   if (typeof fun === 'string') {
     var parts = fun.split('/');
-    db.request({
+    return db.request({
       method: method,
       url: '_design/' + parts[0] + '/_view/' + parts[1] + params,
       body: body
-    }, callback);
-    return;
+    });
   }
 
   // We are using a temporary view, terrible for performance but good for testing
-  var queryObject = JSON.parse(JSON.stringify(fun, function (key, val) {
-    if (typeof val === 'function') {
-      return val + ''; // implicitly `toString` it
-    }
-    return val;
-  }));
+  body = body || {};
+  Object.keys(fun).forEach(function (key) {
+    body[key] = fun[key].toString();
+  });
 
-  db.request({
+  return db.request({
     method: 'POST',
     url: '_temp_view' + params,
-    body: queryObject
-  }, callback);
-}
-
-function destroyView(viewName, adapter, PouchDB, cb) {
-  PouchDB.destroy(viewName, {adapter : adapter}, function (err) {
-    if (err) {
-      return cb(err);
-    }
-    return cb(null);
+    body: body
   });
 }
 
-function saveKeyValues(view, indexableKeysToKeyValues, docId, seq, cb) {
-
-  view.db.get('_local/lastSeq', function (err, lastSeqDoc) {
-    if (err) {
-      if (err.name !== 'not_found') {
-        return cb(err);
-      } else {
-        lastSeqDoc = {
-          _id : '_local/lastSeq',
-          seq : 0
-        };
-      }
+function defaultsTo(value) {
+  return function (reason) {
+    if (reason.name === 'not_found') {
+      return value;
     }
-
-    view.db.get('_local/doc_' + docId, function (err, metaDoc) {
-      if (err) {
-        if (err.name !== 'not_found') {
-          return cb(err);
-        } else {
-          metaDoc = {
-            _id : '_local/doc_' + docId,
-            keys : []
-          };
-        }
-      }
-      view.db.allDocs({keys : metaDoc.keys, include_docs : true}, function (err, res) {
-        if (err) {
-          return cb(err);
-        }
+    throw reason;
+  };
+}
+function saveKeyValues(view, indexableKeysToKeyValues, docId, seq) {
+  return view.db.get('_local/lastSeq')
+    .then(null, defaultsTo({_id: '_local/lastSeq', seq: 0}))
+    .then(function (lastSeqDoc) {
+    return view.db.get('_local/doc_' + docId)
+    .then(null, defaultsTo({_id : '_local/doc_' + docId, keys : []}))
+    .then(function (metaDoc) {
+      return view.db.allDocs({keys : metaDoc.keys, include_docs : true}).then(function (res) {
         var kvDocs = res.rows.map(function (row) {
           return row.doc;
         }).filter(function (row) {
-            return row;
-          });
+          return row;
+        });
 
         var oldKeysMap = {};
         kvDocs.forEach(function (kvDoc) {
@@ -277,23 +215,13 @@ function saveKeyValues(view, indexableKeysToKeyValues, docId, seq, cb) {
         lastSeqDoc.seq = seq;
         kvDocs.push(lastSeqDoc);
 
-        view.db.bulkDocs({docs : kvDocs}, function (err) {
-          if (err) {
-            return cb(err);
-          }
-          cb(null);
-        });
+        return view.db.bulkDocs({docs : kvDocs});
       });
     });
   });
 }
 
-function updateView(view, cb) {
-  taskQueue.addTask(view.sourceDB, 'updateView', [view, cb]);
-  taskQueue.execute();
-}
-
-function updateViewInner(view, cb) {
+var updateView = utils.sequentialize(mainQueue, function (view) {
   // bind the emit function once
   var indexableKeysToKeyValues;
   var emitCounter;
@@ -320,21 +248,10 @@ function updateViewInner(view, cb) {
   }
 
   var lastSeq = view.seq;
-  var gotError;
-  var complete;
-  var numStarted = 0;
-  var numFinished = 0;
-  function checkComplete() {
-    if (!gotError && complete && numStarted === numFinished) {
-      view.seq = lastSeq;
-      cb(null);
-    }
-  }
 
-  function processChange(changeInfo, cb) {
+  function processChange(changeInfo) {
     if (changeInfo.id[0] === '_') {
-      numFinished++;
-      return cb(null);
+      return Promise.resolve();
     }
 
     indexableKeysToKeyValues = {};
@@ -344,47 +261,38 @@ function updateViewInner(view, cb) {
     if (!('deleted' in changeInfo)) {
       tryCode(view.sourceDB, mapFun, [changeInfo.doc]);
     }
-    saveKeyValues(view, indexableKeysToKeyValues, changeInfo.id, changeInfo.seq, function (err) {
-      if (err) {
-        return cb(err);
-      } else {
-        lastSeq = Math.max(lastSeq, changeInfo.seq);
-        numFinished++;
-        cb(null);
-      }
+    return saveKeyValues(view, indexableKeysToKeyValues, changeInfo.id, changeInfo.seq)
+    .then(function () {
+      lastSeq = Math.max(lastSeq, changeInfo.seq);
     });
   }
   var queue = new TaskQueue();
-  queue.registerTask('processChange', processChange);
-
-  view.sourceDB.changes({
-    conflicts: true,
-    include_docs: true,
-    since : view.seq,
-    onChange: function (doc) {
-      numStarted++;
-      queue.addTask(view.sourceDB, 'processChange', [doc, function (err) {
-        if (err && !gotError) {
-          gotError = err;
-          return cb(err);
-        }
-        checkComplete();
-      }]);
-      queue.execute();
-    },
-    complete: function () {
-      complete = true;
-      checkComplete();
-    }
+  // TODO(neojski): https://github.com/daleharvey/pouchdb/issues/1521
+  return new Promise(function (fulfill, reject) {
+    view.sourceDB.changes({
+      conflicts: true,
+      include_docs: true,
+      since : view.seq,
+      onChange: function (doc) {
+        queue.add(function () {
+          return processChange(doc);
+        });
+      },
+      complete: function () {
+        queue.finish().then(function () {
+          view.seq = lastSeq;
+          fulfill();
+        }, function (reason) {
+          reject(reason);
+        });
+      }
+    });
   });
-}
+});
 
-function reduceView(view, results, options, cb) {
-  // we already have the reduced output persisted in the database,
-  // so we only need to rereduce
-  
+function reduceView(view, results, options) {
   if (options.group_level === 0) {
-    delete options.group_level;    
+    delete options.group_level;
   }
 
   var shouldGroup = options.group || options.group_level;
@@ -397,10 +305,8 @@ function reduceView(view, results, options, cb) {
       view.reduceFun.toString(), null, sum, log, Array.isArray, JSON.parse);
   }
 
-  var error;
   var groups = [];
   var lvl = options.group_level;
-  
   results.forEach(function (e) {
     var last = groups[groups.length - 1];
     var key = shouldGroup ? e.key : null;
@@ -423,30 +329,17 @@ function reduceView(view, results, options, cb) {
     var e = groups[i];
     var reduceTry = tryCode(view.sourceDB, reduceFun, [e.key, e.value, false]);
     if (reduceTry.error) {
-      return reduceTry;
+      // FIXME(neojski): what here?
     } else {
       e.value = reduceTry.output;
     }
-    if (e.value.sumsqr && e.value.sumsqr instanceof Error) {
-      error = e.value;
-    }
     e.key = e.key[0][0];
   }
-  if (error) {
-    return cb(error);
-  }
   // no total_rows/offset when reducing
-  cb(null, {
-    rows: sliceResults(groups, options.limit, options.skip)
-  });
+  return {rows: sliceResults(groups, options.limit, options.skip)};
 }
 
-function queryView(view, opts, cb) {
-  taskQueue.addTask(view.sourceDB, 'queryView', [view, opts, cb]);
-  taskQueue.execute();
-}
-
-function queryViewInner(view, opts, cb) {
+var queryView = utils.sequentialize(mainQueue, function (view, opts) {
   var totalRows;
   var shouldReduce = view.reduceFun && opts.reduce !== false;
   var skip = opts.skip || 0;
@@ -456,100 +349,61 @@ function queryViewInner(view, opts, cb) {
     delete opts.keys;
   }
 
-  function fetchFromView(viewOpts, cb) {
+  function fetchFromView(viewOpts) {
     viewOpts.include_docs = true;
-    view.db.allDocs(viewOpts, function (err, res) {
-      if (err) {
-        return cb(err);
-      }
+    return view.db.allDocs(viewOpts).then(function (res) {
       totalRows = res.total_rows;
-      var resultValues = res.rows.map(function (result) {
+      return res.rows.map(function (result) {
         return result.doc.value;
       });
-      cb(null, resultValues);
     });
   }
 
   function onMapResultsReady(results) {
+    var res;
     if (shouldReduce) {
-      var reduceResult = reduceView(view, results, opts, cb);
-      if (!(reduceResult && reduceResult.error)) {
-        return;
-      } // in case of reduce error, map results are returned
+      res = reduceView(view, results, opts);
+    } else {
+      res = {
+        total_rows: totalRows,
+        offset: skip,
+        rows: results
+      };
     }
-    results.forEach(function (result) {
-      delete result.reduceOutput;
-    });
-    var onComplete = function () {
-      cb(null, {
-        total_rows : totalRows,
-        offset : skip,
-        rows : results
-      });
-    };
-    if (opts.include_docs && results.length) {
-      // fetch and attach documents
-      var numDocsFetched = 0;
-      results.forEach(function (viewRow) {
-        var val = viewRow.value;
-        //in this special case, join on _id (issue #106)
-        var dbId = (val && typeof val === 'object' && val._id) || viewRow.id;
-        view.sourceDB.get(dbId, function (_, joined_doc) {
-          if (joined_doc) {
-            viewRow.doc = joined_doc;
-          }
-          if (++numDocsFetched === results.length) {
-            onComplete();
-          }
+    if (opts.include_docs) {
+      var getDocsPromises = results.map(function (row) {
+        var val = row.value;
+        var docId = (val && typeof val === 'object' && val._id) || row.id;
+        return view.sourceDB.get(docId).then(function (joinedDoc) {
+          row.doc = joinedDoc;
+        }, function () {
+          // document error = don't join
         });
       });
-    } else { // don't need the docs
-      onComplete();
+      return Promise.all(getDocsPromises).then(function () {
+        return res;
+      });
+    } else {
+      return res;
     }
-
   }
 
-  if (typeof opts.keys !== 'undefined') {
-    var keysLookup = createKeysLookup(opts.keys);
-    var keysLookupLen = Object.keys(keysLookup).length;
-    var results = new Array(opts.keys.length);
-    var numKeysFetched = 0;
-    var keysError;
-    Object.keys(keysLookup).forEach(function (key) {
-      var keysLookupIndices = keysLookup[key];
-      var trueKey = JSON.parse(key);
-      var viewOpts = {
-        startkey : toIndexableString([trueKey]),
-        endkey   : toIndexableString([trueKey, {}])
-      };
-      fetchFromView(viewOpts, function (err, subResults) {
-        if (err) {
-          keysError = true;
-          return cb(err);
-        } else if (keysError) {
-          return;
-        } else if (typeof keysLookupIndices === 'number') {
-          results[keysLookupIndices] = subResults;
-        } else { // array of indices
-          keysLookupIndices.forEach(function (i) {
-            results[i] = subResults;
-          });
-        }
-        if (++numKeysFetched === keysLookupLen) {
-          // combine results
-          var combinedResults = [];
-          results.forEach(function (result) {
-            combinedResults = combinedResults.concat(result);
-          });
-
-          if (!shouldReduce) {
-            // since we couldn't skip/limit before, do so now
-            combinedResults = sliceResults(combinedResults, opts.limit, skip);
-          }
-          onMapResultsReady(combinedResults);
-        }
-      });
+  var flatten = function (array) {
+    return array.reduce(function (prev, cur) {
+      return prev.concat(cur);
     });
+  };
+
+  if (typeof opts.keys !== 'undefined') {
+    var keys = opts.keys;
+    var fetchPromises = keys.map(function (key) {
+      var viewOpts = {
+        startkey : toIndexableString([key]),
+        endkey   : toIndexableString([key, {}])
+      };
+      return fetchFromView(viewOpts);
+    });
+    return Promise.all(fetchPromises).then(flatten).then(onMapResultsReady);
   } else { // normal query, no 'keys'
     var viewOpts = {
       descending : opts.descending
@@ -581,271 +435,141 @@ function queryViewInner(view, opts, cb) {
       }
       viewOpts.skip = skip;
     }
-    fetchFromView(viewOpts, function (err, results) {
-      if (err) {
-        return cb(err);
+    return fetchFromView(viewOpts).then(onMapResultsReady);
+  }
+});
+
+function httpViewCleanup(db) {
+  return db.request({
+    method: 'POST',
+    url: '_view_cleanup'
+  });
+}
+
+var localViewCleanup = utils.sequentialize(mainQueue, function (db) {
+  return db.get('_local/mrviews').then(function (metaDoc) {
+    var docsToViews = {};
+    Object.keys(metaDoc.views).forEach(function (fullViewName) {
+      var parts = fullViewName.split('/');
+      var designDocName = '_design/' + parts[0];
+      var viewName = parts[1];
+      docsToViews[designDocName] = docsToViews[designDocName] || {};
+      docsToViews[designDocName][viewName] = true;
+    });
+    var opts = {
+      keys : Object.keys(docsToViews),
+      include_docs : true
+    };
+    return db.allDocs(opts).then(function (res) {
+      var viewsToStatus = {};
+      res.rows.forEach(function (row) {
+        Object.keys(docsToViews[row.key]).forEach(function (viewName) {
+          var viewDBNames = Object.keys(metaDoc.views[row.key.substring(8) + '/' + viewName]);
+          // design doc deleted, or view function nonexistent
+          var statusIsGood = row.doc && row.doc.views && row.doc.views[viewName];
+          viewDBNames.forEach(function (viewDBName) {
+            viewsToStatus[viewDBName] = viewsToStatus[viewDBName] || statusIsGood;
+          });
+        });
+      });
+      var dbsToDelete = Object.keys(viewsToStatus).filter(function (viewDBName) {
+        return !viewsToStatus[viewDBName];
+      });
+      var destroyPromises = dbsToDelete.map(function (viewDBName) {
+        return db.constructor.destroy(viewDBName, {adapter : db.adapter});
+      });
+      return Promise.all(destroyPromises).then(function () {
+        return {ok: true};
+      });
+    });
+  }, defaultsTo({ok: true}));
+});
+
+exports.viewCleanup = utils.callbackify(function () {
+  var db = this;
+  if (db.type() === 'http') {
+    return httpViewCleanup(db);
+  }
+  return localViewCleanup(db);
+});
+
+function queryPromised(db, fun, opts) {
+  if (db.type() === 'http') {
+    return httpQuery(db, fun, opts);
+  }
+
+  if (typeof fun !== 'string') {
+    // temp_view
+    checkQueryParseError(opts, fun);
+
+    var randomizer = Math.round(Math.random()  * 1000000) + 1;
+    var createViewOpts = {
+      db : db,
+      viewName : 'temp_view/temp_view',
+      map : fun.map,
+      reduce : fun.reduce,
+      randomizer : randomizer
+    };
+    return createView(createViewOpts).then(function (view) {
+      function cleanup() {
+        return view.db.destroy();
       }
-      onMapResultsReady(results);
+      return utils.fin(updateView(view).then(function () {
+        return queryView(view, opts);
+      }), cleanup);
+    });
+  } else {
+    // persistent view
+    var fullViewName = fun;
+    var parts = fullViewName.split('/');
+    var designDocName = parts[0];
+    var viewName = parts[1];
+    return db.get('_design/' + designDocName).then(function (doc) {
+      var fun = doc.views && doc.views[viewName];
+
+      if (!fun || typeof fun.map !== 'string') {
+        throw { name: 'not_found', message: 'missing_named_view' };
+      }
+      checkQueryParseError(opts, fun);
+
+      var createViewOpts = {
+        db : db,
+        viewName : fullViewName,
+        map : fun.map,
+        reduce : fun.reduce
+      };
+      return createView(createViewOpts).then(function (view) {
+        if (opts.stale === 'ok' || opts.stale === 'update_after') {
+          if (opts.stale === 'update_after') {
+            updateView(view);
+          }
+          return queryView(view, opts);
+        } else { // stale not ok
+          return updateView(view).then(function () {
+            return queryView(view, opts);
+          });
+        }
+      });
     });
   }
 }
 
-function httpViewCleanup(db, cb) {
-  db.request({
-    method: 'POST',
-    url: '_view_cleanup'
-  }, cb);
-}
-
-function localViewCleanup(db, callback) {
-  taskQueue.addTask(db, 'localViewCleanup', [db, callback]);
-  taskQueue.execute();
-}
-
-function localViewCleanupInner(db, callback) {
-  db.get('_local/mrviews', function (err, metaDoc) {
-    if (err && err.name !== 'not_found') {
-      return callback(err);
-    } else if (metaDoc && metaDoc.views) {
-      var docsToViews = {};
-      Object.keys(metaDoc.views).forEach(function (fullViewName) {
-        var parts = fullViewName.split('/');
-        var designDocName = '_design/' + parts[0];
-        var viewName = parts[1];
-        docsToViews[designDocName] = docsToViews[designDocName] || {};
-        docsToViews[designDocName][viewName] = true;
-      });
-      var opts = {
-        keys : Object.keys(docsToViews),
-        include_docs : true
-      };
-      db.allDocs(opts, function (err, res) {
-        if (err) {
-          return callback(err);
-        }
-        var numStarted = 0;
-        var numDone = 0;
-        var gotError;
-        function checkDone() {
-          if (numStarted === numDone) {
-            if (gotError) {
-              return callback(gotError);
-            }
-            callback(null, {ok : true});
-          }
-        }
-        var viewsToStatus = {};
-        res.rows.forEach(function (row) {
-          Object.keys(docsToViews[row.key]).forEach(function (viewName) {
-            var viewObj = metaDoc.views[row.key.substring(8) + '/' + viewName];
-            if (!viewObj) {
-              return;
-            }
-            var viewDBNames = Object.keys(viewObj);
-            // design doc deleted, or view function nonexistent
-            var statusIsGood = row.doc && row.doc.views && row.doc.views[viewName];
-            viewDBNames.forEach(function (viewDBName) {
-              viewsToStatus[viewDBName] = viewsToStatus[viewDBName] || statusIsGood;
-            });
-          });
-        });
-        var dbsToDelete = Object.keys(viewsToStatus).filter(function (viewDBName) {
-          return !viewsToStatus[viewDBName];
-        });
-        if (!dbsToDelete.length) {
-          return callback(null, {ok : true});
-        }
-        utils.uniq(dbsToDelete).forEach(function (viewDBName) {
-          numStarted++;
-
-          destroyView(viewDBName, db.adapter, db.constructor, function (err) {
-            if (err) {
-              gotError = err;
-            }
-            numDone++;
-            checkDone();
-          });
-        });
-        taskQueue.execute();
-      });
-    } else {
-      return callback(null, {ok : true});
-    }
-  });
-}
-
-exports.viewCleanup = function (origCallback) {
-  var db = this;
-  var realCB;
-  if (origCallback) {
-    realCB = function (err, resp) {
-      process.nextTick(function () {
-        origCallback(err, resp);
-      });
-    };
-  }
-  var promise = new Promise(function (resolve, reject) {
-    function callback(err, data) {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(data);
-      }
-    }
-
-    if (db.type() === 'http') {
-      return httpViewCleanup(db, callback);
-    }
-
-    return localViewCleanup(db, callback);
-  });
-
-  if (realCB) {
-    promise.then(function (resp) {
-      realCB(null, resp);
-    }, realCB);
-  }
-  return promise;
-};
-
 exports.query = function (fun, opts, callback) {
-  var db = this;
   if (typeof opts === 'function') {
     callback = opts;
     opts = {};
   }
-  opts = db.constructor.extend(true, {}, opts || {});
-  if (callback) {
-    opts.complete = callback;
+  opts = utils.extend({}, opts);
+
+  if (typeof fun === 'function') {
+    fun = {map : fun};
   }
-  var tempCB = opts.complete;
-  var realCB;
-  if (opts.complete) {
-    realCB = function (err, resp) {
-      process.nextTick(function () {
-        tempCB(err, resp);
-      });
-    };
-  } 
-  var promise = new Promise(function (resolve, reject) {
-    opts.complete = function (err, data) {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(data);
-      }
-    };
 
-    if (typeof fun === 'object') {
-      // copy to avoid overwriting
-      var funCopy = {};
-      Object.keys(fun).forEach(function (key) {
-        funCopy[key] = fun[key];
-      });
-      fun = funCopy;
-    }
-
-    if (db.type() === 'http') {
-      if (typeof fun === 'function') {
-        return httpQuery(db, {map: fun}, opts);
-      }
-      return httpQuery(db, fun, opts);
-    }
-
-    if (typeof fun === 'function') {
-      fun = {map : fun};
-    }
-
-    var parseError = checkQueryParseError(opts, fun);
-    if (parseError) {
-      return opts.complete(parseError);
-    }
-
-    if (typeof fun !== 'string') {
-      // temp_view
-      var randomizer = Math.round(Math.random()  * 1000000) + 1;
-
-      var createViewOpts = {
-        db : db,
-        viewName : 'temp_view/temp_view',
-        map : fun.map,
-        reduce : fun.reduce,
-        randomizer : randomizer
-      };
-      createView(createViewOpts, function (err, view) {
-        if (err) {
-          return opts.complete(err);
-        }
-        function cleanupAndComplete(err, res) {
-          view.db.destroy(function (destroyErr) {
-            opts.complete(destroyErr || err, res);
-          });
-        }
-        updateView(view, function (err) {
-          if (err) {
-            return cleanupAndComplete(err);
-          }
-          queryView(view, opts, cleanupAndComplete);
-        });
-      });
-    } else {
-      // persistent view
-      var fullViewName = fun;
-      var parts = fullViewName.split('/');
-      var designDocName = parts[0];
-      var viewName = parts[1];
-      db.get('_design/' + designDocName, function (err, doc) {
-        if (err) {
-          opts.complete(err);
-          return;
-        }
-
-        var fun = doc.views && doc.views[viewName];
-
-        if (!fun || typeof fun.map !== 'string') {
-          opts.complete({ name: 'not_found', message: 'missing_named_view' });
-          return;
-        }
-        var parseError = checkQueryParseError(opts, fun);
-        if (parseError) {
-          return opts.complete(parseError);
-        }
-
-        var createViewOpts = {
-          db : db,
-          viewName : fullViewName,
-          map : fun.map,
-          reduce : fun.reduce
-        };
-        createView(createViewOpts, function (err, view) {
-          if (err) {
-            return opts.complete(err);
-          } else if (opts.stale === 'ok' || opts.stale === 'update_after') {
-            if (opts.stale === 'update_after') {
-              updateView(view, function (err) {
-                if (err) {
-                  view.sourceDB.emit('error', err);
-                }
-              });
-            }
-            queryView(view, opts, opts.complete);
-          } else { // stale not ok
-            return updateView(view, function (err) {
-              if (err) {
-                return opts.complete(err);
-              }
-              queryView(view, opts, opts.complete);
-            });
-          }
-        });
-      });
-    }
+  var db = this;
+  var promise = Promise.resolve().then(function () {
+    return queryPromised(db, fun, opts);
   });
-  if (realCB) {
-    promise.then(function (resp) {
-      realCB(null, resp);
-    }, realCB);
-  }
+  utils.promisedCallback(promise, callback);
   return promise;
 };
 

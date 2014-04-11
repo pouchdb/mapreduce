@@ -2,17 +2,14 @@
 
 var upsert = require('./upsert');
 
-module.exports = function (opts, cb) {
+module.exports = function (opts) {
   var sourceDB = opts.db;
   var viewName = opts.viewName;
   var mapFun = opts.map;
   var reduceFun = opts.reduce;
   var randomizer = opts.randomizer;
 
-  sourceDB.info(function (err, info) {
-    if (err) {
-      return cb(err);
-    }
+  return sourceDB.info().then(function (info) {
     var PouchDB = sourceDB.constructor;
     var depDbName = info.db_name + '-mrview-' + PouchDB.utils.Crypto.MD5(
       mapFun.toString() + (reduceFun && reduceFun.toString())) +
@@ -27,27 +24,18 @@ module.exports = function (opts, cb) {
       doc._deleted = false;
       return doc;
     }
-    upsert(sourceDB, '_local/mrviews', diffFunction, function (err) {
-      if (err) {
-        return cb(err);
-      }
-      sourceDB.registerDependentDatabase(depDbName, function (err, res) {
-        if (err) {
-          return cb(err);
-        }
+    return upsert(sourceDB, '_local/mrviews', diffFunction).then(function () {
+      return sourceDB.registerDependentDatabase(depDbName).then(function (res) {
         var db = res.db;
         var view = new View(depDbName, db, sourceDB, mapFun, reduceFun);
-        view.db.get('_local/lastSeq', function (err, lastSeqDoc) {
-          if (err) {
-            if (err.name !== 'not_found') {
-              return cb(err);
-            } else {
-              view.seq = 0;
-            }
-          } else {
-            view.seq = lastSeqDoc.seq;
+        return view.db.get('_local/lastSeq').then(null, function (err) {
+          if (err.name === 'not_found') {
+            return 0;
           }
-          cb(null, view);
+          throw err;
+        }).then(function (lastSeqDoc) {
+          view.seq = lastSeqDoc.seq;
+          return view;
         });
       });
     });
