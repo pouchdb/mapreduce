@@ -36,35 +36,65 @@ function sliceResults(results, limit, skip) {
   return results;
 }
 
+function createBuiltInError(name) {
+  var error = new Error('builtin ' + name +
+    ' function requires map values to be numbers' +
+    (name === '_sum' ? ' or number arrays' : ''));
+  error.name = 'invalid_value';
+  error.status = 500;
+  return error;
+}
+
 function sum(values) {
-  return values.reduce(function (a, b) {
-    return a + b;
-  }, 0);
+  var result = 0;
+  for (var i = 0, len = values.length; i < len; i++) {
+    var num = values[i];
+    if (typeof num !== 'number') {
+      if (Array.isArray(num)) {
+        // lists of numbers are also allowed, sum them separately
+        result = typeof result === 'number' ? [result] : result;
+        for (var j = 0, jLen = num.length; j < jLen; j++) {
+          var jNum = num[j];
+          if (typeof jNum !== 'number') {
+            throw createBuiltInError('_sum');
+          } else if (typeof result[j] === 'undefined') {
+            result.push(jNum);
+          } else {
+            result[j] += jNum;
+          }
+        }
+      } else { // not array/number
+        throw createBuiltInError('_sum');
+      }
+    } else if (typeof result === 'number') {
+      result += num;
+    } else { // add number to array
+      result[0] += num;
+    }
+  }
+  return result;
 }
 
 var builtInReduce = {
-  "_sum": function (keys, values) {
+  _sum: function (keys, values) {
     return sum(values);
   },
 
-  "_count": function (keys, values) {
+  _count: function (keys, values) {
     return values.length;
   },
 
-  "_stats": function (keys, values) {
+  _stats: function (keys, values) {
     // no need to implement rereduce=true, because Pouch
     // will never call it
     function sumsqr(values) {
       var _sumsqr = 0;
-      var error;
-      for (var idx in values) {
-        if (typeof values[idx] === 'number') {
-          _sumsqr += values[idx] * values[idx];
+      for (var i = 0, len = values.length; i < len; i++) {
+        var num = values[i];
+        if (typeof num === 'number') {
+          _sumsqr += num * num;
         } else {
-          error = new Error('builtin _stats function requires map values to be numbers');
-          error.name = 'invalid_value';
-          error.status = 500;
-          throw error;
+          throw createBuiltInError('_stats');
         }
       }
       return _sumsqr;
