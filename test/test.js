@@ -451,6 +451,68 @@ function tests(dbName, dbType, viewType) {
       }).should.be.rejected;
     });
 
+    it("Built in _sum reduce function should throw an error with a promise", function () {
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map: "function(doc){emit(null, doc.val);}",
+          reduce: "_sum"
+        }).then(function (queryFun) {
+          return db.bulkDocs({
+            docs: [
+              { val: 1 },
+              { val: 2 },
+              { val: 'baz' }
+            ]
+          }).then(function () {
+            return db.query(queryFun, {reduce: true, group: true});
+          });
+        });
+      }).should.be.rejected;
+    });
+
+    it("Built in _sum reduce function with num arrays should throw an error", function () {
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map: "function(doc){emit(null, doc.val);}",
+          reduce: "_sum"
+        }).then(function (queryFun) {
+          return db.bulkDocs({
+            docs: [
+              { val: [1, 2, 3] },
+              { val: 2 },
+              { val: ['baz']}
+            ]
+          }).then(function () {
+            return db.query(queryFun, {reduce: true, group: true});
+          });
+        });
+      }).should.be.rejected;
+    });
+
+    it("Built in _sum can be used with lists of numbers", function () {
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map: "function(doc){emit(null, doc.val);}",
+          reduce: "_sum"
+        }).then(function (queryFun) {
+          return db.bulkDocs({
+            docs: [
+              { val: 2 },
+              { val: [1, 2, 3, 4] },
+              { val: [3, 4] }
+            ]
+          }).then(function () {
+            return db.query(queryFun, {reduce: true, group: true});
+          }).then(function (res) {
+            res.should.deep.equal({rows : [{
+              key : null,
+              value : [6, 6, 3, 4]
+            }]});
+          });
+        });
+      });
+    });
+
     if (viewType === 'temp') {
       it("No reduce function, passing just a function", function () {
         return new Pouch(dbName).then(function (db) {
