@@ -32,7 +32,8 @@
     "pouchdb-collate": "~1.1.0",
     "inherits": "~2.0.1",
     "extend": "^1.2.1",
-    "argsarray": "0.0.1"
+    "argsarray": "0.0.1",
+    "md5-jkmyers": "0.0.1"
   },
   "devDependencies": {
     "bluebird": "^1.0.7",
@@ -51,5 +52,8 @@
   },
   "peerDependencies": {
     "pouchdb": ">= 2.0.0"
+  },
+  "browser": {
+    "crypto": false
   }
 }
