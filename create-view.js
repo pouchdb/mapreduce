@@ -1,6 +1,7 @@
 'use strict';
 
 var upsert = require('./upsert');
+var utils = require('./utils');
 
 module.exports = function (opts) {
   var sourceDB = opts.db;
@@ -10,8 +11,7 @@ module.exports = function (opts) {
   var randomizer = opts.randomizer;
 
   return sourceDB.info().then(function (info) {
-    var PouchDB = sourceDB.constructor;
-    var depDbName = info.db_name + '-mrview-' + PouchDB.utils.Crypto.MD5(
+    var depDbName = info.db_name + '-mrview-' + utils.MD5(
       mapFun.toString() + (reduceFun && reduceFun.toString())) +
       (randomizer && randomizer.toString());
 

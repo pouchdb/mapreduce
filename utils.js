@@ -65,3 +65,14 @@ exports.sequentialize = function (queue, promiseFactory) {
     });
   };
 };
+
+var crypto = require('crypto');
+var md5 = require('md5-jkmyers');
+
+exports.MD5 = function (string) {
+  if (!process.browser) {
+    return crypto.createHash('md5').update(string).digest('hex');
+  } else {
+    return md5(string);
+  }
+};
