@@ -1325,6 +1325,69 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
+    it('should support startkey_docid and endkey_docid', function () {
+      this.timeout(5000);
+
+      var docs = [
+        {_id: '1', key: 'a'},
+        {_id: '2', key: 'b'},
+        {_id: '3', key: 'b'},
+        {_id: '4', key: 'b'},
+        {_id: '5', key: 'c'},
+        {_id: '6', key: 'd'},
+        {_id: '7', key: 'd'}
+      ];
+
+      var queries = [
+        [{startkey: 'a', startkey_docid: '0'}, 7],
+        [{startkey: 'a', startkey_docid: '1'}, 7],
+        [{startkey: 'a', startkey_docid: '2'}, 6],
+        [{startkey: 'b', startkey_docid: '1'}, 6],
+        [{startkey: 'b', startkey_docid: '2'}, 6],
+        [{startkey: 'b', startkey_docid: '3'}, 6],
+        [{startkey: 'a', startkey_docid: '4'}, 6],
+        [{startkey: 'b', startkey_docid: '9'}, 3],
+        [{startkey: 'z', startkey_docid: '9'}, 0],
+        [{startkey: 'b', startkey_docid: '3', descending: true}, 1],
+        [{startkey: 'b', startkey_docid: '3', endkey: 'b', endkey_docid: '4'}, 0],
+        [{startkey: 'b', startkey_docid: '3', endkey: 'c', endkey_docid: '6'}, 3],
+        [
+          {startkey: 'b', startkey_docid: '2', endkey: 'b', endkey_docid: '3'},
+          2
+        ],
+        [
+          {startkey: 'b', startkey_docid: '3', endkey: 'b', endkey_docid: '2', descending: true},
+          0
+        ],
+        [
+          {startkey: 'b', startkey_docid: '3', endkey: 'b', endkey_docid: '2', descending: true},
+          2
+        ],
+        [{startkey_docid: '4', endkey_docid: '3'}, 7]
+      ];
+
+      var Promise = Pouch.utils.Promise;
+
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map : function (doc) {
+            emit(doc.key);
+          }
+        }).then(function (mapFun) {
+          return db.bulkDocs({docs : docs}).then(function () {
+            return Promise.all(queries.map(function (queryDef, i) {
+              var opts = queryDef[0];
+              var expected = queryDef[1];
+              return db.query(mapFun, opts).then(function (res) {
+                res.rows.should.have.length(expected, 'rows.length #' + i +
+                  ', opts are ' + JSON.stringify(opts));
+              });
+            }));
+          });
+        });
+      });
+    });
+
     it('should query correctly with skip/limit and multiple keys/values', function () {
       this.timeout(20000);
       var db = new Pouch(dbName);

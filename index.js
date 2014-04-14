@@ -132,6 +132,8 @@ function httpQuery(db, fun, opts) {
   addHttpParam('skip', opts, params);
   addHttpParam('startkey', opts, params, true);
   addHttpParam('endkey', opts, params, true);
+  addHttpParam('startkey_docid', opts, params, true);
+  addHttpParam('endkey_docid', opts, params, true);
   addHttpParam('key', opts, params, true);
 
   // If keys are supplied, issue a POST request to circumvent GET query string limits
