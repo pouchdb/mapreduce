@@ -260,17 +260,16 @@ function saveKeyValues(view, indexableKeysToKeyValues, docId, seq) {
 
 var updateView = utils.sequentialize(mainQueue, function (view) {
   // bind the emit function once
-  var indexableKeysToKeyValues;
+  var mapResults;
   var emitCounter;
   var doc;
 
   function emit(key, value) {
-    var indexableStringKey = toIndexableString([key, doc._id, value, emitCounter++]);
-    indexableKeysToKeyValues[indexableStringKey] = {
+    mapResults.push({order: [key, doc._id, value, emitCounter++], value: {
       id  : doc._id,
       key : normalizeKey(key),
       value : normalizeKey(value)
-    };
+    }});
   }
 
   var mapFun;
@@ -292,10 +291,21 @@ var updateView = utils.sequentialize(mainQueue, function (view) {
       emitCounter = 0;
       doc = currentDoc;
 
+      mapResults = [];
+      emitCounter = 0;
+      doc = currentDoc;
+
       if (!doc._deleted) {
         tryCode(view.sourceDB, mapFun, [doc]);
       }
-
+      mapResults.sort(function (x, y) {
+        return collate(x.order, y.order);
+      });
+      var indexableKeysToKeyValues = {};
+      mapResults.forEach(function (o, pos) {
+        var value = o.value;
+        indexableKeysToKeyValues[toIndexableString([value.key, value.id, pos])] = o.value;
+      });
       return saveKeyValues(view, indexableKeysToKeyValues, doc._id, seq)
       .then(function () {
         currentSeq = Math.max(currentSeq, seq);
