@@ -18,3 +18,25 @@ before_script:
     # and make sure its logging debug
   - "curl -X GET http://127.0.0.1:5984/"
   - "curl -X PUT http://127.0.0.1:5984/_config/log/level -d '\"debug\"'"
+
+matrix: 
+  - run=1 npm test
+  - run=2 npm test
+  - run=3 npm test
+  - run=4 npm test
+  - run=5 npm test
+  - run=6 npm test
+  - run=7 npm test
+  - run=8 npm test
+  - run=9 npm test
+  - run=10 npm test
+  - run=11 npm test
+  - run=12 npm test
+  - run=13 npm test
+  - run=14 npm test
+  - run=15 npm test
+  - run=16 npm test
+  - run=17 npm test
+  - run=18 npm test
+  - run=19 npm test
+  - run=20 npm test
