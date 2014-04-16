@@ -1360,7 +1360,6 @@ function tests(dbName, dbType, viewType) {
           keyValues.push([key, value]);
         });
       });
-      keyValues = keyValues.slice(0, 3);
       var docs = [
         {_id : 'joinme', joined : 'yay!'},
         {_id : '1', keyValues : keyValues},
@@ -1385,11 +1384,14 @@ function tests(dbName, dbType, viewType) {
             return db.query(mapFun, {include_docs: true});
           }).then(function (res) {
             var expectedResults = [];
-            ['1', '2', '3'].forEach(function (id) {
+            docs.forEach(function (doc) {
+              if (doc._id === 'joinme') {
+                return;
+              }
               keyValues.forEach(function (keyValue) {
                 expectedResults.push(
                   {
-                    id: id,
+                    id: doc._id,
                     key: keyValue[0],
                     value: keyValue[1]
                   }
@@ -1397,8 +1399,10 @@ function tests(dbName, dbType, viewType) {
               });
             });
 
-            console.log(res);
-            console.log(expectedResults);
+            console.log(JSON.stringify(
+              res.rows.map(function (x) { return x.value; })));
+            console.log(JSON.stringify(
+              expectedResults.map(function (x) { return x.value; })));
 
             res.rows.map(function (result) {
               return {id: result.id, key: result.id, value: result.value};
