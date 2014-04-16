@@ -2032,6 +2032,27 @@ function tests(dbName, dbType, viewType) {
           });
         });
       });
+
+      it('should allow view names without slashes', function () {
+        var ddocRev;
+        return new Pouch(dbName).then(function (db) {
+          return db.put({
+            _id : '_design/foo',
+            views : {
+              foo : { map : function (doc) { emit(doc._id); }.toString()}
+            }
+          }).then(function (info) {
+            ddocRev = info.rev;
+            return db.bulkDocs({docs : [{_id : 'baz'}, {_id : 'bar'}]});
+          }).then(function () {
+            return db.query('foo');
+          }).then(function (res) {
+            res.rows[0].key.should.equal('bar');
+            res.rows[1].key.should.equal('baz');
+            return db.remove({_id : '_design/foo', _rev : ddocRev});
+          });
+        });
+      });
     }
   });
 }

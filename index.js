@@ -13,6 +13,12 @@ var log = ((typeof console !== 'undefined') && (typeof console.log === 'function
 var utils = require('./utils');
 var mainQueue = new TaskQueue();
 
+function parseViewName(name) {
+  // can be either 'ddocname/viewname' or just 'viewname'
+  // (where the ddoc name is the same)
+  return name.indexOf('/') === -1 ? [name, name] : name.split('/');
+}
+
 function tryCode(db, fun, args) {
   // emit an event if there was an error thrown by a map/reduce function.
   // putting try/catches in a single function also avoids deoptimizations.
@@ -147,7 +153,7 @@ function httpQuery(db, fun, opts) {
 
   // We are referencing a query defined in the design doc
   if (typeof fun === 'string') {
-    var parts = fun.split('/');
+    var parts = parseViewName(fun);
     return db.request({
       method: method,
       url: '_design/' + parts[0] + '/_view/' + parts[1] + params,
@@ -521,7 +527,7 @@ function queryPromised(db, fun, opts) {
   } else {
     // persistent view
     var fullViewName = fun;
-    var parts = fullViewName.split('/');
+    var parts = parseViewName(fullViewName);
     var designDocName = parts[0];
     var viewName = parts[1];
     return db.get('_design/' + designDocName).then(function (doc) {
