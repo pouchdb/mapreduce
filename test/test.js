@@ -1328,6 +1328,87 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
+    it('should query correctly with many different keys/values', function () {
+      this.timeout(300000);
+
+      var keys = [1, 2, 3];
+      var values = [null,  false,  true,  -1.7976931348623157e+308,  -300,
+        -200,  -100,  -10,
+        -2.5,  -2,  -1.5,  -1,  -0.5,  -0.0001,  -5e-324,  0,  5e-324,
+        0.0001,  0.1,  0.5,  1,  1.5,  2,  3,
+        10,  15,  100,  200,  300,  1.7976931348623157e+308,  "",  "1",
+        "10",  "100",  "2",  "20",
+        "[]",  "foo",  "mo",  "moe",  "moz",  "mozilla",
+        "mozilla with a super long string see how far it can go",  "mozzy",
+        [],  [null],  [null,  null],  [null,  "foo"],  [false],  [false,  100],
+        [true],
+        [true,  100],  [0],  [0,  null],  [0,  1],  [0,  ""],  [0,  "foo"],
+        ["",  ""],  ["foo"],
+        ["foo",  1],  {},
+        {"_id": "joinme"},
+        {"0": null},  {"0": false},  {"0": true},  {"0": 0},
+        {"0": 1},
+        {"0": "bar"},  {"0": "foo"},  {"0": "foo",  "1": false},
+        {"0": "foo",  "1": true},
+        {"0": "foo",  "1": 0},  {"0": "foo",  "1": "0"},
+        {"0": "foo",  "1": "bar"},
+        {"0": "quux"}, {"1": "foo"}];
+
+      var keyValues = [];
+      keys.forEach(function (key) {
+        values.forEach(function (value) {
+          keyValues.push([key, value]);
+        });
+      });
+      keyValues = keyValues.slice(0, 3);
+      var docs = [
+        {_id : 'joinme', joined : 'yay!'},
+        {_id : '1', keyValues : keyValues},
+        {_id : '2', keyValues : keyValues},
+        {_id : '3', keyValues : keyValues}
+      ];
+
+      return new Pouch(dbName).then(function (db) {
+
+        return createView(db, {
+          map : function (doc) {
+            if (doc._id === 'joinme') {
+              return;
+            }
+            doc.keyValues.forEach(function (keyValue) {
+              emit(keyValue[0], keyValue[1]);
+            });
+          }
+        }).then(function (mapFun) {
+
+          return db.bulkDocs({docs : docs}).then(function () {
+            return db.query(mapFun, {include_docs: true});
+          }).then(function (res) {
+            var expectedResults = [];
+            ['1', '2', '3'].forEach(function (id) {
+              keyValues.forEach(function (keyValue) {
+                expectedResults.push(
+                  {
+                    id: id,
+                    key: keyValue[0],
+                    value: keyValue[1]
+                  }
+                );
+              });
+            });
+
+            console.log(res);
+            console.log(expectedResults);
+
+            res.rows.map(function (result) {
+              return {id: result.id, key: result.id, value: result.value};
+            }).should.deep.equal(expectedResults);
+          });
+        });
+      });
+    });
+
+
     it('should query correctly with skip/limit and multiple keys/values', function () {
       this.timeout(20000);
       var db = new Pouch(dbName);
