@@ -2099,14 +2099,12 @@ function tests(dbName, dbType, viewType) {
               tasks.push(db.query('view' + i + '/view'));
             }
             return all(tasks);
-          }).then(function (res) {
-            console.log(res);
+          }).then(function () {
             docs.forEach(function (doc) {
               doc._deleted = true;
             });
             return db.bulkDocs({docs : docs});
-          }).then(function (res) {
-            console.log(res);
+          }).then(function () {
             return db.viewCleanup();
           });
         });
