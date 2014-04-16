@@ -364,11 +364,8 @@ function reduceView(view, results, options) {
   for (var i = 0, len = groups.length; i < len; i++) {
     var e = groups[i];
     var reduceTry = tryCode(view.sourceDB, reduceFun, [e.key, e.value, false]);
-    if (reduceTry.error) {
-      // FIXME(neojski): what here?
-    } else {
-      e.value = reduceTry.output;
-    }
+    // CouchDB typically just sets the value to null if reduce errors out
+    e.value = reduceTry.error ? null : reduceTry.output;
     e.key = e.key[0][0];
   }
   // no total_rows/offset when reducing
