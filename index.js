@@ -12,6 +12,7 @@ var log = ((typeof console !== 'undefined') && (typeof console.log === 'function
   Function.prototype.bind.call(console.log, console) : function () {};
 var utils = require('./utils');
 var mainQueue = new TaskQueue();
+var CHANGES_BATCH_SIZE = 50;
 
 function parseViewName(name) {
   // can be either 'ddocname/viewname' or just 'viewname'
@@ -283,46 +284,62 @@ var updateView = utils.sequentialize(mainQueue, function (view) {
     mapFun = evalFunc(view.mapFun.toString(), emit, sum, log, Array.isArray, JSON.parse);
   }
 
-  var lastSeq = view.seq;
+  var currentSeq = view.seq || 0;
 
-  function processChange(changeInfo) {
-    if (changeInfo.id[0] === '_') {
-      return Promise.resolve();
-    }
+  function processChange(currentDoc, seq) {
+    return function () {
+      indexableKeysToKeyValues = {};
+      emitCounter = 0;
+      doc = currentDoc;
 
-    indexableKeysToKeyValues = {};
-    emitCounter = 0;
-    doc = changeInfo.doc;
+      if (!doc._deleted) {
+        tryCode(view.sourceDB, mapFun, [doc]);
+      }
 
-    if (!('deleted' in changeInfo)) {
-      tryCode(view.sourceDB, mapFun, [changeInfo.doc]);
-    }
-    return saveKeyValues(view, indexableKeysToKeyValues, changeInfo.id, changeInfo.seq)
-    .then(function () {
-      lastSeq = Math.max(lastSeq, changeInfo.seq);
-    });
+      return saveKeyValues(view, indexableKeysToKeyValues, doc._id, seq)
+      .then(function () {
+        currentSeq = Math.max(currentSeq, seq);
+      });
+    };
   }
   var queue = new TaskQueue();
   // TODO(neojski): https://github.com/daleharvey/pouchdb/issues/1521
-  return new Promise(function (fulfill, reject) {
-    view.sourceDB.changes({
-      conflicts: true,
-      include_docs: true,
-      since : view.seq,
-      onChange: function (doc) {
-        queue.add(function () {
-          return processChange(doc);
-        });
-      },
-      complete: function () {
-        queue.finish().then(function () {
-          view.seq = lastSeq;
-          fulfill();
-        }, function (reason) {
-          reject(reason);
-        });
-      }
-    });
+
+  return new Promise(function (resolve, reject) {
+
+    function complete() {
+      queue.finish().then(function () {
+        view.seq = currentSeq;
+        resolve();
+      });
+    }
+
+    function processNextBatch() {
+      view.sourceDB.changes({
+        conflicts: true,
+        include_docs: true,
+        since : currentSeq,
+        limit : CHANGES_BATCH_SIZE
+      }).on('complete', function (response) {
+        var results = response.results;
+        if (!results.length) {
+          return complete();
+        }
+        for (var i = 0, l = results.length; i < l; i++) {
+          var change = results[i];
+          if (change.doc._id[0] !== '_') {
+            queue.add(processChange(change.doc, change.seq));
+          }
+        }
+        if (results.length < CHANGES_BATCH_SIZE) {
+          return complete();
+        }
+        processNextBatch();
+      }).on('error', function (err) {
+        reject(err);
+      });
+    }
+    processNextBatch();
   });
 });
 

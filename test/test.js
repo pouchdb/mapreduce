@@ -1665,6 +1665,87 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
+    it('should query correctly after many edits', function () {
+      this.timeout(5000);
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map : function (doc) {
+            emit(doc.name, doc.likes);
+          }
+        }).then(function (queryFun) {
+          var docs = [
+            { _id: '1', name: 'leonardo' },
+            { _id: '2', name: 'michelangelo' },
+            { _id: '3', name: 'donatello' },
+            { _id: '4', name: 'rafael' },
+            { _id: '5', name: 'april o\'neil' },
+            { _id: '6', name: 'splinter' },
+            { _id: '7', name: 'shredder' },
+            { _id: '8', name: 'krang' },
+            { _id: '9', name: 'rocksteady' },
+            { _id: 'a', name: 'bebop' },
+            { _id: 'b', name: 'casey jones' },
+            { _id: 'c', name: 'casey jones' },
+            { _id: 'd', name: 'baxter stockman' },
+            { _id: 'e', name: 'general chaos' },
+            { _id: 'f', name: 'rahzar' },
+            { _id: 'g', name: 'tokka' },
+            { _id: 'h', name: 'usagi yojimbo' },
+            { _id: 'i', name: 'rat king' },
+            { _id: 'j', name: 'metalhead' },
+            { _id: 'k', name: 'slash' },
+            { _id: 'l', name: 'ace duck' },
+          ];
+
+          function update(res, docFun) {
+            for (var i  = 0; i < res.length; i++) {
+              docs[i]._rev = res[i].rev;
+              docFun(docs[i]);
+            }
+            return db.bulkDocs({docs : docs});
+          }
+          return db.bulkDocs({docs : docs}).then(function (res) {
+            return update(res, function (doc) { doc.likes = 'pizza'; });
+          }).then(function (res) {
+            return update(res, function (doc) { doc.knows = 'kung fu'; });
+          }).then(function (res) {
+            return update(res, function (doc) { doc.likes = 'fighting'; });
+          }).then(function (res) {
+            return update(res, function (doc) { doc._deleted = true; });
+          }).then(function (res) {
+            return update(res, function (doc) { doc._deleted = false; });
+          }).then(function (res) {
+            return update(res, function (doc) { doc.name = doc.name + '1'; });
+          }).then(function (res) {
+            return update(res, function (doc) { doc.name = doc.name + '2'; });
+          }).then(function (res) {
+            return update(res, function (doc) { doc.name = 'nameless'; });
+          }).then(function (res) {
+            return update(res, function (doc) { doc._deleted = true; });
+          }).then(function (res) {
+            return update(res, function (doc) { doc.likes = 'turtles'; });
+          }).then(function (res) {
+            return update(res, function (doc) { doc._deleted = false; });
+          }).then(function (res) {
+            return update(res, function (doc) { doc.whatever = 'quux'; });
+          }).then(function (res) {
+            return update(res, function (doc) { doc.stuff = 'baz'; });
+          }).then(function (res) {
+            return update(res, function (doc) { doc.things = 'foo'; });
+          }).then(function () {
+            return db.query(queryFun);
+          }).then(function (res) {
+            res.total_rows.should.equal(docs.length, 'expected total_rows');
+            res.rows.map(function (row) {
+              return [row.id, row.key, row.value];
+            }).should.deep.equal(docs.map(function (doc) {
+              return [doc._id, 'nameless', 'turtles'];
+            }), 'key values match');
+          });
+        });
+      });
+    });
+
     if (viewType === 'persisted') {
       it('should query correctly when stale', function () {
         return new Pouch(dbName).then(function (db) {
