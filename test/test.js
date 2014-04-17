@@ -9,7 +9,6 @@ var chai = require('chai');
 var should = chai.should();
 require("mocha-as-promised")();
 chai.use(require("chai-as-promised"));
-var async = require('async');
 var Promise = require('bluebird');
 var all = Promise.all;
 var dbs;
@@ -2103,30 +2102,39 @@ function tests(dbName, dbType, viewType) {
         }).then(function (mapFun) {
           return db.bulkDocs({docs : docs}).then(function () {
             var tasks = keySets.map(function (keys, i) {
-              return db.allDocs({
-                keys : ['0', '1', '2'],
-                include_docs: true
-              }).then(function (res) {
-                console.log(res);
+              return function () {
                 var expectedResponseKeys = [];
-                docs = res.rows.map(function (x) { return x.doc; });
-                docs.forEach(function (doc, j) {
-                  doc.keys = keySets[(i + j) % keySets.length];
-                  doc.keys.forEach(function (key) {
-                    expectedResponseKeys.push(key);
+                return db.allDocs({
+                  keys : ['0', '1', '2'],
+                  include_docs: true
+                }).then(function (res) {
+                  docs = res.rows.map(function (x) { return x.doc; });
+                  docs.forEach(function (doc, j) {
+                    doc.keys = keySets[(i + j) % keySets.length];
+                    doc.keys.forEach(function (key) {
+                      expectedResponseKeys.push(key);
+                    });
                   });
-                });
-                expectedResponseKeys.sort();
-                return db.bulkDocs({docs: docs}).then(function () {
+                  expectedResponseKeys.sort();
+                  return db.bulkDocs({docs: docs});
+                }).then(function () {
                   return db.query(mapFun);
                 }).then(function (res) {
-                  res.rows.map(function (x) {
+                  var actualKeys = res.rows.map(function (x) {
                     return x.key;
-                  }).should.deep.equal(expectedResponseKeys);
+                  });
+                  actualKeys.should.deep.equal(expectedResponseKeys);
                 });
-              });
+              };
             });
-            return async.waterfall(tasks);
+            var chain = tasks.shift()();
+            function getNext() {
+              var task = tasks.shift();
+              return task && function () {
+                return task().then(getNext());
+              };
+            }
+            return chain.then(getNext());
           });
         });
       });
