@@ -1858,6 +1858,38 @@ function tests(dbName, dbType, viewType) {
         });
       });
     });
+
+    it('should return error when multi-key fetch & group=false', function () {
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map: function (doc) { emit(doc._id); },
+          reduce: '_sum'
+        }).then(function (queryFun) {
+          var keys = ['1', '2'];
+          var opts = {
+            keys: keys,
+            group: false
+          };
+          return db.query(queryFun, opts).then(function (res) {
+            should.not.exist(res);
+          }).catch(function (err) {
+            err.name.should.equal('query_parse_error');
+            opts = {keys: keys};
+            return db.query(queryFun, opts).then(function (res) {
+              should.not.exist(res);
+            }).catch(function (err) {
+              err.name.should.equal('query_parse_error');
+              opts = {keys: keys, reduce : false};
+              return db.query(queryFun, opts).then(function () {
+                opts = {keys: keys, group: true};
+                return db.query(queryFun, opts);
+              });
+            });
+          });
+        });
+      });
+    });
+
     it('should handle user errors in map functions', function () {
       return new Pouch(dbName).then(function (db) {
         var err;

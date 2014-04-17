@@ -136,8 +136,13 @@ function checkQueryParseError(options, fun) {
     collate(options[startkeyName], options[endkeyName]) > 0) {
     throw new QueryParseError('No rows can match your key range, reverse your ' +
         'start_key and end_key or set {descending : true}');
-  } else if (fun.reduce && options.reduce !== false && options.include_docs) {
-    throw new QueryParseError('{include_docs:true} is invalid for reduce');
+  } else if (fun.reduce && options.reduce !== false) {
+    if (options.include_docs) {
+      throw new QueryParseError('{include_docs:true} is invalid for reduce');
+    } else if (options.keys && options.keys.length > 1 &&
+        !(options.group || options.group_level)) {
+      throw new QueryParseError('Multi-key fetches for reduce views must use {group: true}');
+    }
   }
   if (options.group_level) {
     if (typeof options.group_level !== 'number') {
