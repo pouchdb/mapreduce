@@ -4,9 +4,11 @@
 exports.uniq = function (arr) {
   var map = {};
   arr.forEach(function (element) {
-    map[element] = true;
+    map[JSON.stringify(element)] = element;
   });
-  return Object.keys(map);
+  return Object.keys(map).map(function (key) {
+    return map[key];
+  });
 };
 
 exports.inherits = require('inherits');

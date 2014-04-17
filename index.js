@@ -220,8 +220,23 @@ function saveKeyValues(view, indexableKeysToKeyValues, docId, seq) {
     return view.db.get('_local/doc_' + docId)
     .then(null, defaultsTo({_id : '_local/doc_' + docId, keys : []}))
     .then(function (metaDoc) {
-      return view.db.allDocs({keys : metaDoc.keys, include_docs : true}).then(function (res) {
-        var kvDocs = res.rows.map(function (row) {
+      var tasks = metaDoc.keys.map(function (key) {
+        var opts = {
+          startkey: toIndexableString([key, docId]),
+          endkey: toIndexableString([key, docId, {}, {}]),
+          include_docs: true
+        };
+        view.db.allDocs(opts);
+      });
+      return Promise.all(tasks).then(function (allResults) {
+        var rows = [];
+        allResults.forEach(function (res) {
+          if (res) {
+            rows.concat(res.rows);
+          }
+        });
+
+        var kvDocs = rows.map(function (row) {
           return row.doc;
         }).filter(function (row) {
           return row;
@@ -236,17 +251,20 @@ function saveKeyValues(view, indexableKeysToKeyValues, docId, seq) {
           }
         });
 
+        var newEmittedKeys = [];
         var newKeys = Object.keys(indexableKeysToKeyValues);
         newKeys.forEach(function (key) {
           if (!oldKeysMap[key]) {
             // new doc
+            var keyValue = indexableKeysToKeyValues[key];
             kvDocs.push({
               _id : key,
-              value : indexableKeysToKeyValues[key]
+              value : keyValue
             });
+            newEmittedKeys.push(keyValue.key);
           }
         });
-        metaDoc.keys = utils.uniq(newKeys.concat(metaDoc.keys));
+        metaDoc.keys = utils.uniq(newEmittedKeys.concat(metaDoc.keys));
         kvDocs.push(metaDoc);
 
         lastSeqDoc.seq = seq;
