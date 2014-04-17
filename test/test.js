@@ -2103,6 +2103,73 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
+    it('should handle many doc changes', function () {
+      this.timeout(10000);
+
+      var docs = [{_id: '0'}, {_id : '1'}, {_id: '2'}];
+
+      var keySets = [
+        [1],
+        [2, 3],
+        [4],
+        [5],
+        [6, 7, 3],
+        [],
+        [2, 3],
+        [1, 2],
+        [],
+        [9],
+        [9, 3, 2, 1]
+      ];
+
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map : function (doc) {
+            doc.keys.forEach(function (key) {
+              emit(key);
+            });
+          }
+        }).then(function (mapFun) {
+          return db.bulkDocs({docs : docs}).then(function () {
+            var tasks = keySets.map(function (keys, i) {
+              return function () {
+                var expectedResponseKeys = [];
+                return db.allDocs({
+                  keys : ['0', '1', '2'],
+                  include_docs: true
+                }).then(function (res) {
+                  docs = res.rows.map(function (x) { return x.doc; });
+                  docs.forEach(function (doc, j) {
+                    doc.keys = keySets[(i + j) % keySets.length];
+                    doc.keys.forEach(function (key) {
+                      expectedResponseKeys.push(key);
+                    });
+                  });
+                  expectedResponseKeys.sort();
+                  return db.bulkDocs({docs: docs});
+                }).then(function () {
+                  return db.query(mapFun);
+                }).then(function (res) {
+                  var actualKeys = res.rows.map(function (x) {
+                    return x.key;
+                  });
+                  actualKeys.should.deep.equal(expectedResponseKeys);
+                });
+              };
+            });
+            var chain = tasks.shift()();
+            function getNext() {
+              var task = tasks.shift();
+              return task && function () {
+                return task().then(getNext());
+              };
+            }
+            return chain.then(getNext());
+          });
+        });
+      });
+    });
+
     if (viewType === 'persisted') {
 
       it('should delete duplicate indexes', function () {
