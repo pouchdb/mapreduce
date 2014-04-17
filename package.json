@@ -36,6 +36,7 @@
     "md5-jkmyers": "0.0.1"
   },
   "devDependencies": {
+    "async": "~0.7.0",
     "bluebird": "^1.0.7",
     "browserify": "~2.36.0",
     "chai": "~1.8.1",
