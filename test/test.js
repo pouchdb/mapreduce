@@ -1860,7 +1860,8 @@ function tests(dbName, dbType, viewType) {
     });
     it('should handle user errors in map functions', function () {
       return new Pouch(dbName).then(function (db) {
-        db.on('error', function () { /* noop */ });
+        var err;
+        db.on('error', function (e) { err = e; });
         return createView(db, {
           map : function (doc) {
             emit(doc.nonexistent.foo);
@@ -1870,13 +1871,17 @@ function tests(dbName, dbType, viewType) {
             return db.query(queryFun);
           }).then(function (res) {
             res.rows.should.have.length(0);
+            if (dbType === 'local') {
+              should.exist(err);
+            }
           });
         });
       });
     });
     it('should handle user errors in reduce functions', function () {
       return new Pouch(dbName).then(function (db) {
-        db.on('error', function () { /* noop */ });
+        var err;
+        db.on('error', function (e) { err = e; });
         return createView(db, {
           map : function (doc) {
             emit(doc.name);
@@ -1892,6 +1897,9 @@ function tests(dbName, dbType, viewType) {
             return db.query(queryFun, {reduce: false});
           }).then(function (res) {
             res.rows.map(function (row) {return row.key; }).should.deep.equal(['bar']);
+            if (dbType === 'local') {
+              should.exist(err);
+            }
           });
         });
       });
