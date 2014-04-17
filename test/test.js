@@ -1896,7 +1896,29 @@ function tests(dbName, dbType, viewType) {
         });
       });
     });
-
+    it('should handle reduce returning undefined', function () {
+      return new Pouch(dbName).then(function (db) {
+        var err;
+        db.on('error', function (e) { err = e; });
+        return createView(db, {
+          map : function (doc) {
+            emit(doc.name);
+          },
+          reduce : function () {
+          }
+        }).then(function (queryFun) {
+          return db.put({name : 'bar', _id : '1'}).then(function () {
+            return db.query(queryFun, {group: true});
+          }).then(function (res) {
+            res.rows.map(function (row) {return row.key; }).should.deep.equal(['bar']);
+            return db.query(queryFun, {reduce: false});
+          }).then(function (res) {
+            res.rows.map(function (row) {return row.key; }).should.deep.equal(['bar']);
+            should.not.exist(err);
+          });
+        });
+      });
+    });
     it('should properly query custom reduce functions', function () {
       this.timeout(10000);
       return new Pouch(dbName).then(function (db) {
