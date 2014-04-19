@@ -2,6 +2,7 @@
 
 var upsert = require('./upsert');
 var utils = require('./utils');
+var Promise = typeof global.Promise === 'function' ? global.Promise : require('lie');
 
 module.exports = function (opts) {
   var sourceDB = opts.db;
@@ -10,10 +11,18 @@ module.exports = function (opts) {
   var reduceFun = opts.reduce;
   var randomizer = opts.randomizer;
 
+  var viewSignature = mapFun.toString() + (reduceFun && reduceFun.toString()) +
+    (randomizer && randomizer.toString());
+
+  if (sourceDB._cachedViews) {
+    var cachedView = sourceDB._cachedViews[viewSignature];
+    if (cachedView) {
+      return Promise.resolve(cachedView);
+    }
+  }
+
   return sourceDB.info().then(function (info) {
-    var depDbName = info.db_name + '-mrview-' + utils.MD5(
-      mapFun.toString() + (reduceFun && reduceFun.toString())) +
-      (randomizer && randomizer.toString());
+    var depDbName = info.db_name + '-mrview-' + utils.MD5(viewSignature);
 
     // save the view name in the source PouchDB so it can be cleaned up if necessary
     // (e.g. when the _design doc is deleted, remove all associated view data)
@@ -39,6 +48,15 @@ module.exports = function (opts) {
           throw err;
         }).then(function (lastSeqDoc) {
           view.seq = lastSeqDoc.seq;
+
+          if (!randomizer) {
+            // randomizer implies the view is temporary, no need to cache it
+            sourceDB._cachedViews = sourceDB._cachedViews || {};
+            sourceDB._cachedViews[viewSignature] = view;
+            view.db.on('destroyed', function () {
+              delete sourceDB._cachedViews[viewSignature];
+            });
+          }
           return view;
         });
       });
