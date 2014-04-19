@@ -27,6 +27,7 @@ module.exports = function (opts) {
     return upsert(sourceDB, '_local/mrviews', diffFunction).then(function () {
       return sourceDB.registerDependentDatabase(depDbName).then(function (res) {
         var db = res.db;
+        db.auto_compaction = true;
         var view = new View(depDbName, db, sourceDB, mapFun, reduceFun);
         return view.db.get('_local/lastSeq').then(null, function (err) {
           if (err.name === 'not_found') {
