@@ -19,9 +19,12 @@ module.exports = function (opts) {
     // (e.g. when the _design doc is deleted, remove all associated view data)
     function diffFunction(doc) {
       doc.views = doc.views || {};
-      doc.views[viewName] = doc.views[viewName] || {};
-      doc.views[viewName][depDbName] = true;
-      doc._deleted = false;
+      var depDbs = doc.views[viewName] = doc.views[viewName] || {};
+
+      if (depDbs[depDbName]) {
+        return false; // no update necessary
+      }
+      depDbs[depDbName] = true;
       return doc;
     }
     return upsert(sourceDB, '_local/mrviews', diffFunction).then(function () {
