@@ -2360,6 +2360,30 @@ function tests(dbName, dbType, viewType) {
           });
         });
       });
+      it('test 304s in Safari (issue 69)', function () {
+        return new Pouch(dbName).then(function (db) {
+          return createView(db, {
+            map : function (doc) {
+              emit(doc.name);
+            }
+          }).then(function (queryFun) {
+            return db.bulkDocs({docs : [
+              {name : 'foo'}
+            ]}).then(function () {
+              return db.query(queryFun, {keys : ['foo']});
+            }).then(function (res) {
+              res.rows.should.have.length(1);
+              return db.query(queryFun, {keys : ['foo']});
+            }).then(function (res) {
+              res.rows.should.have.length(1);
+              return db.query(queryFun, {keys : ['foo']});
+            }).then(function (res) {
+              res.rows.should.have.length(1);
+            });
+          });
+        });
+      });
+
     }
   });
 }
