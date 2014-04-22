@@ -636,6 +636,61 @@ exports.query = function (fun, opts, callback) {
   return promise;
 };
 
+exports.putView = function (name, fun, rev, opts, callback) {
+  if (typeof rev === 'object') {
+    callback = opts;
+    opts = rev;
+    rev = null;
+  } else if (typeof rev === 'function') {
+    callback = rev;
+    rev = opts = null;
+  } else if (typeof opts === 'function') {
+    callback = opts;
+    opts = null;
+  }
+  opts = utils.extend({}, opts || {});
+
+  if (typeof fun === 'function' || typeof fun === 'string') {
+    fun = {map : fun};
+  }
+
+  var error;
+
+  if (typeof name !== 'string') {
+    error = new Error('you must supply a design doc/view name');
+    error.name = 'putview_error';
+    error.status = 400;
+    return utils.promisedCallback(Promise.reject(error), callback);
+  } else if (!fun || ['function', 'string'].indexOf(typeof fun.map) === -1) {
+    error = new Error('you must supply a map function');
+    error.name = 'putview_error';
+    error.status = 400;
+    return utils.promisedCallback(Promise.reject(error), callback);
+  }
+
+  if (typeof fun.map === 'function') {
+    fun.map = fun.map.toString();
+  }
+  if (typeof fun.reduce === 'function') {
+    fun.reduce = fun.reduce.toString();
+  }
+
+  var parts = name.split('/');
+  var designDocName = '_design/' + parts[0];
+  var viewName = parts[1];
+
+  var doc = {
+    _id : designDocName,
+    views : {}
+  };
+  doc.views[viewName] = fun;
+  if (rev) {
+    doc._rev = rev;
+  }
+
+  return this.put(doc, callback);
+};
+
 function QueryParseError(message) {
   this.status = 400;
   this.name = 'query_parse_error';

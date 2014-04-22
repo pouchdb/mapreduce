@@ -75,23 +75,7 @@ function tests(dbName, dbType, viewType) {
     return new Pouch(dbName);
   });
   afterEach(function () {
-    return new Pouch(dbName).then(function (db) {
-      var opts = {startkey : '_design', endkey: '`', include_docs : true};
-      return db.allDocs(opts).then(function (designDocs) {
-        var docs = designDocs.rows.map(function (row) {
-          row.doc._deleted = true;
-          return row.doc;
-        });
-        return db.bulkDocs({docs : docs}).then(function () {
-          return db.viewCleanup();
-        }).then(function (res) {
-          res.ok.should.equal(true);
-          return Pouch.destroy(dbName);
-        });
-      }).catch(function () {
-        return Pouch.destroy(dbName);
-      });
-    });
+    return Pouch.destroy(dbName);
   });
   describe('views', function () {
     it("Test basic view", function () {
@@ -2235,6 +2219,85 @@ function tests(dbName, dbType, viewType) {
             return db.bulkDocs({docs : docs});
           }).then(function () {
             return db.viewCleanup();
+          });
+        });
+      });
+
+      it('should allow users to put views with sugar', function () {
+
+        var docs = [{name : 'foo'}, {name : 'foo'}, {name : 'bar'}];
+
+        var mapOnly = ['bar', 'foo', 'foo'];
+        var withReduce = ['bar', 'foo'];
+
+        var tasks = [
+          [function (doc) {emit(doc.name); }, mapOnly],
+          [function (doc) {emit(doc.name); }.toString(), mapOnly],
+          [{map: function (doc) {emit(doc.name); }}, mapOnly],
+          [ {map: function (doc) {emit(doc.name); }.toString()}, mapOnly],
+          [
+            { map: function (doc) {emit(doc.name); }, reduce: '_count' },
+            withReduce
+          ],
+          [
+            {
+              map: function (doc) {emit(doc.name); },
+              reduce: function (keys, values) {
+                return values.length;
+              }
+            },
+            withReduce
+          ]
+        ];
+
+        return new Pouch(dbName).then(function (db) {
+          return db.bulkDocs({docs : docs}).then(function () {
+            return Promise.all(tasks.map(function (task, i) {
+              var fun = task[0];
+              var expected = task[1];
+              var viewName = 'ddoc' + i + '/view' + i;
+              var shouldReduce = !!fun.reduce;
+              return db.putView(viewName, fun).then(function () {
+                return db.query(viewName, {
+                  reduce : shouldReduce,
+                  group : shouldReduce
+                });
+              }).then(function (res) {
+                res.rows.map(function (row) {
+                  return row.key;
+                }).should.deep.equal(expected);
+              });
+            }));
+          });
+        });
+      });
+
+      it('should give errors on invalid putView', function () {
+        return new Pouch(dbName).then(function (db) {
+          return db.putView(function () {}).then(function (res) {
+            should.not.exist(res);
+          }).catch(function (err) {
+            should.exist(err);
+            return db.putView('name/name', {}).then(function (res) {
+              should.not.exist(res);
+            }).catch(function (err) {
+              should.exist(err);
+            });
+          });
+        });
+      });
+
+      it('should give errors on conflict with putView', function () {
+        var rev;
+        return new Pouch(dbName).then(function (db) {
+          return db.putView('name/name', function () {}).then(function (res) {
+            rev = res.rev;
+            return db.putView('name/name', function () {}).then(function (res) {
+              should.not.exist(res);
+            }).catch(function (err) {
+              err.name.should.equal('conflict');
+              return db.putView('name/name', function () {}, rev);
+            });
           });
         });
       });
