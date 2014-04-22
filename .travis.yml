@@ -5,7 +5,7 @@ services:
 
 node_js:
   - "0.10"
-
+script: npm run $COMMAND
 before_script:
   - "export DISPLAY=:99.0"
   - "sh -e /etc/init.d/xvfb start"
@@ -18,3 +18,8 @@ before_script:
     # and make sure its logging debug
   - "curl -X GET http://127.0.0.1:5984/"
   - "curl -X PUT http://127.0.0.1:5984/_config/log/level -d '\"debug\"'"
+
+env:
+  matrix:
+  - COMMAND=test
+  - COMMAND=coverage
