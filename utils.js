@@ -1,5 +1,10 @@
 'use strict';
-
+/* istanbul ignore if */
+if (typeof global.Promise === 'function') {
+  exports.Promise = global.Promise;
+} else {
+  exports.Promise = require('lie');
+}
 // uniquify a list, similar to underscore's _.uniq
 exports.uniq = function (arr) {
   var map = {};
@@ -29,7 +34,7 @@ exports.callbackify = function (fun) {
     var cb = args.pop();
     var promise = fun.apply(this, args);
     if (typeof cb === 'function') {
-      exports.promisedCallback(cb);
+      exports.promisedCallback(promise, cb);
     }
     return promise;
   });
@@ -70,6 +75,7 @@ var crypto = require('crypto');
 var md5 = require('md5-jkmyers');
 
 exports.MD5 = function (string) {
+  /* istanbul ignore else */
   if (!process.browser) {
     return crypto.createHash('md5').update(string).digest('hex');
   } else {

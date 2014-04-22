@@ -2,7 +2,7 @@
 
 var upsert = require('./upsert');
 var utils = require('./utils');
-var Promise = typeof global.Promise === 'function' ? global.Promise : require('lie');
+var Promise = utils.Promise;
 
 module.exports = function (opts) {
   var sourceDB = opts.db;
@@ -29,9 +29,9 @@ module.exports = function (opts) {
     function diffFunction(doc) {
       doc.views = doc.views || {};
       var depDbs = doc.views[viewName] = doc.views[viewName] || {};
-
+      /* istanbul ignore if */
       if (depDbs[depDbName]) {
-        return false; // no update necessary
+        return; // no update necessary
       }
       depDbs[depDbName] = true;
       return doc;
@@ -49,11 +49,12 @@ module.exports = function (opts) {
           reduceFun: reduceFun
         };
         return view.db.get('_local/lastSeq').then(null, function (err) {
-          if (err.name === 'not_found') {
-            return 0;
+          /* istanbul ignore if */
+          if (err.name !== 'not_found') {
+            throw err;
           }
-          throw err;
         }).then(function (lastSeqDoc) {
+          lastSeqDoc = lastSeqDoc || 0;
           view.seq = lastSeqDoc.seq;
 
           if (!randomizer) {
