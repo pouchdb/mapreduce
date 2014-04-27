@@ -183,6 +183,7 @@ function tests(dbName, dbType, viewType) {
         });
       });
     }
+
     it("Test opts.startkey/opts.endkey", function () {
       return new Pouch(dbName).then(function (db) {
         return createView(db, {
@@ -221,6 +222,60 @@ function tests(dbName, dbType, viewType) {
         });
       });
     });
+
+    //TODO: split this to their own tests within a describe block
+    it("Test opts.inclusive_end = false", function () {
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map: function (doc) {
+            emit(doc.key, doc);
+          }
+        }).then(function (queryFun) {
+          return db.bulkDocs({docs: [
+            {key: 'key1'},
+            {key: 'key2'},
+            {key: 'key3'},
+            {key: 'key4'},
+            {key: 'key4'},
+            {key: 'key5'}
+          ]}).then(function () {
+            return db.query(queryFun, {
+              reduce: false,
+              endkey: 'key4',
+              inclusive_end: false
+            });
+          }).then(function (resp) {
+            resp.rows.should.have.length(3, 'endkey=key4 without inclusive end');
+            resp.rows[0].key.should.equal('key1');
+            resp.rows[2].key.should.equal('key3');
+          })
+          .then(function () {
+            return db.query(queryFun, {
+              reduce: false,
+              startkey: 'key3',
+              endkey: 'key4',
+              inclusive_end: false
+            });
+          }).then(function (resp) {
+            resp.rows.should.have.length(1, 'startkey=key3, endkey=key4 without inclusive end');
+            resp.rows[0].key.should.equal('key3');
+          }).then(function () {
+            return db.query(queryFun, {
+              reduce: false,
+              startkey: 'key4',
+              endkey: 'key1',
+              descending: true,
+              inclusive_end: false
+            });
+          }).then(function (resp) {
+            resp.rows.should
+              .have.length(4, 'startkey=key4, endkey=key1 descending without inclusive end');
+            resp.rows[0].key.should.equal('key4');
+          });
+        });
+      });
+    });
+
     it("Test opts.key", function () {
       return new Pouch(dbName).then(function (db) {
         return createView(db, {

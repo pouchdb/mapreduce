@@ -174,6 +174,7 @@ function httpQuery(db, fun, opts) {
   addHttpParam('skip', opts, params);
   addHttpParam('startkey', opts, params, true);
   addHttpParam('endkey', opts, params, true);
+  addHttpParam('inclusive_end', opts, params);
   addHttpParam('key', opts, params, true);
 
   // If keys are supplied, issue a POST request to circumvent GET query string limits
@@ -473,9 +474,14 @@ var queryView = utils.sequentialize(mainQueue, function (view, opts) {
         toIndexableString([opts.startkey]);
     }
     if (typeof opts.endkey !== 'undefined') {
-      viewOpts.endkey = opts.descending ?
-        toIndexableString([opts.endkey]) :
-        toIndexableString([opts.endkey, {}]);
+      var inclusiveEnd = !(opts.descending);
+      if (opts.inclusive_end === false) {
+        inclusiveEnd = !inclusiveEnd;
+      }
+
+      viewOpts.endkey = inclusiveEnd ?
+        toIndexableString([opts.endkey, {}]) :
+        toIndexableString([opts.endkey]);
     }
     if (typeof opts.key !== 'undefined') {
       var keyStart = toIndexableString([opts.key]);
