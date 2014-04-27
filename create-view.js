@@ -40,7 +40,14 @@ module.exports = function (opts) {
       return sourceDB.registerDependentDatabase(depDbName).then(function (res) {
         var db = res.db;
         db.auto_compaction = true;
-        var view = new View(depDbName, db, sourceDB, mapFun, reduceFun);
+        var view = {
+          name: depDbName,
+          db: db, 
+          sourceDB: sourceDB,
+          adapter: sourceDB.adapter,
+          mapFun: mapFun,
+          reduceFun: reduceFun
+        };
         return view.db.get('_local/lastSeq').then(null, function (err) {
           if (err.name === 'not_found') {
             return 0;
@@ -63,12 +70,3 @@ module.exports = function (opts) {
     });
   });
 };
-
-function View(name, db, sourceDB, mapFun, reduceFun) {
-  this.db = db;
-  this.name = name;
-  this.sourceDB = sourceDB;
-  this.adapter = sourceDB.adapter;
-  this.mapFun = mapFun;
-  this.reduceFun = reduceFun;
-}
