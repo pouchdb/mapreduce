@@ -45,8 +45,7 @@
     "http-server": "~0.5.5",
     "istanbul": "~0.1.45",
     "jshint": "~2.3.0",
-    "mocha": "~1.14.0",
-    "mocha-as-promised": "~2.0.0",
+    "mocha": "~1.18",
     "pouchdb": "pouchdb/pouchdb",
     "watchify": "~0.4.1"
   },
