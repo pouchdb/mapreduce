@@ -7,7 +7,6 @@ var Mapreduce = require('../');
 Pouch.plugin(Mapreduce);
 var chai = require('chai');
 var should = chai.should();
-require("mocha-as-promised")();
 chai.use(require("chai-as-promised"));
 var Promise = require('bluebird');
 var all = Promise.all;
