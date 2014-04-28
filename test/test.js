@@ -1648,8 +1648,57 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
+    it('should query correctly after replicating and other ddoc', function () {
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map : function (doc) {
+            emit(doc.name);
+          }
+        }).then(function (queryFun) {
+          return db.bulkDocs({docs: [{name: 'foobar'}]}).then(function () {
+            return db.query(queryFun);
+          }).then(function (res) {
+            res.rows.map(function (x) {return x.key; }).should.deep.equal([
+              'foobar'
+            ], 'test db before replicating');
+            return new Pouch('local-other').then(function (db2) {
+              return db.replicate.to(db2).then(function () {
+                return db.query(queryFun);
+              }).then(function (res) {
+                res.rows.map(function (x) {return x.key; }).should.deep.equal([
+                  'foobar'
+                ], 'test db after replicating');
+                return db.put({_id: '_design/other_ddoc', views: {
+                  map: "function(doc) { emit(doc._id); }"
+                }});
+              }).then(function () {
+                  // the random ddoc adds a single change that we don't
+                  // care about. testing this increases our coverage
+                return db.query(queryFun);
+              }).then(function (res) {
+                res.rows.map(function (x) {return x.key; }).should.deep.equal([
+                  'foobar'
+                ], 'test db after adding random ddoc');
+                return db2.query(queryFun);
+              }).then(function (res) {
+                res.rows.map(function (x) {return x.key; }).should.deep.equal([
+                  'foobar'
+                ], 'test db2');
+              }).catch(function (err) {
+                return Pouch.destroy('local-other').then(function () {
+                  throw err;
+                });
+              }).then(function () {
+                return Pouch.destroy('local-other');
+              });
+            });
+          });
+        });
+      });
+    });
+
     it('should query correctly after many edits', function () {
-      this.timeout(5000);
+      this.timeout(10000);
       return new Pouch(dbName).then(function (db) {
         return createView(db, {
           map : function (doc) {
@@ -1677,8 +1726,15 @@ function tests(dbName, dbType, viewType) {
             { _id: 'i', name: 'rat king' },
             { _id: 'j', name: 'metalhead' },
             { _id: 'k', name: 'slash' },
-            { _id: 'l', name: 'ace duck' },
+            { _id: 'l', name: 'ace duck' }
           ];
+
+          for (var i = 0; i < 100; i++) {
+            docs.push({
+              _id: 'z-' + (i + 1000), // for correct string ordering
+              name: 'random foot soldier #' + i
+            });
+          }
 
           function update(res, docFun) {
             for (var i  = 0; i < res.length; i++) {
