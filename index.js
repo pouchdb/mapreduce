@@ -1,16 +1,21 @@
 'use strict';
 
 var pouchCollate = require('pouchdb-collate');
-var Promise = typeof global.Promise === 'function' ? global.Promise : require('lie');
 var TaskQueue = require('./taskqueue');
 var collate = pouchCollate.collate;
 var toIndexableString = pouchCollate.toIndexableString;
 var normalizeKey = pouchCollate.normalizeKey;
 var createView = require('./create-view');
 var evalFunc = require('./evalfunc');
-var log = ((typeof console !== 'undefined') && (typeof console.log === 'function')) ?
-  Function.prototype.bind.call(console.log, console) : function () {};
+var log; 
+/* istanbul ignore else */
+if ((typeof console !== 'undefined') && (typeof console.log === 'function')) {
+  log = Function.prototype.bind.call(console.log, console);
+} else {
+  log = function () {};
+}
 var utils = require('./utils');
+var Promise = utils.Promise;
 var mainQueue = new TaskQueue();
 var CHANGES_BATCH_SIZE = 50;
 
@@ -51,7 +56,7 @@ function sliceResults(results, limit, skip) {
 function createBuiltInError(name) {
   var error = new Error('builtin ' + name +
     ' function requires map values to be numbers' +
-    (name === '_sum' ? ' or number arrays' : ''));
+    ' or number arrays');
   error.name = 'invalid_value';
   error.status = 500;
   return error;
@@ -103,11 +108,7 @@ var builtInReduce = {
       var _sumsqr = 0;
       for (var i = 0, len = values.length; i < len; i++) {
         var num = values[i];
-        if (typeof num === 'number') {
-          _sumsqr += num * num;
-        } else {
-          throw createBuiltInError('_stats');
-        }
+        _sumsqr += (num * num);
       }
       return _sumsqr;
     }
@@ -221,9 +222,12 @@ function httpQuery(db, fun, opts) {
   // We are using a temporary view, terrible for performance but good for testing
   body = body || {};
   Object.keys(fun).forEach(function (key) {
-    body[key] = fun[key].toString();
+    if (Array.isArray(fun[key])) {
+      body[key] = fun[key];
+    } else {
+      body[key] = fun[key].toString();
+    }
   });
-
   return db.request({
     method: 'POST',
     url: '_temp_view' + params,
@@ -233,10 +237,12 @@ function httpQuery(db, fun, opts) {
 
 function defaultsTo(value) {
   return function (reason) {
+    /* istanbul ignore else */
     if (reason.name === 'not_found') {
       return value;
+    } else {
+      throw reason;
     }
-    throw reason;
   };
 }
 function saveKeyValues(view, docIdsToEmits, seq) {
@@ -374,10 +380,12 @@ var updateView = utils.sequentialize(mainQueue, function (view) {
         if (results.length < CHANGES_BATCH_SIZE) {
           return complete();
         }
-        processNextBatch();
-      }).on('error', function (err) {
+        return processNextBatch();
+      }).on('error', onError);
+      /* istanbul ignore next */
+      function onError(err) {
         reject(err);
-      });
+      }
     }
     processNextBatch();
   });
