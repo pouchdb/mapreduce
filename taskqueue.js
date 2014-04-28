@@ -3,7 +3,7 @@
  * Simple task queue to sequentialize actions. Assumes callbacks will eventually fire (once).
  */
 
-var Promise = typeof global.Promise === 'function' ? global.Promise : require('lie');
+var Promise = require('./utils').Promise;
 
 function TaskQueue() {
   this.promise = new Promise(function (fulfill) {fulfill(); });

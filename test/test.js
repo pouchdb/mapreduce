@@ -9,6 +9,8 @@ var chai = require('chai');
 var should = chai.should();
 chai.use(require("chai-as-promised"));
 var Promise = require('bluebird');
+var upsert = require('../upsert');
+var utils = require('../utils');
 var all = Promise.all;
 var dbs;
 if (process.browser) {
@@ -33,7 +35,109 @@ function setTimeoutPromise(time) {
     setTimeout(function () { resolve(true); }, time);
   });
 }
-
+describe('upsert', function () {
+  it('should throw an error with no doc id', function () {
+    return upsert().should.be.rejected;
+  });
+  it('should throw an error if the doc errors', function () {
+    return upsert({
+      get: function (foo, cb) {
+        cb(new Error('a fake error!'));
+      }
+    }, 'foo').should.be.rejected;
+  });
+  it('should fulfill if the diff returns false', function () {
+    return upsert({
+      get: function (foo, cb) {
+        cb(null, 'lalala');
+      }
+    }, 'foo', function () {
+      return false;
+    }).should.become('lalala');
+  });
+  it('should error if it can\'t put', function () {
+    return upsert({
+      get: function (foo, cb) {
+        cb(null, 'lalala');
+      },
+      put: function () {
+        return Promise.reject(new Error('falala'));
+      }
+    }, 'foo', function () {
+      return true;
+    }).should.be.rejected;
+  });
+});
+describe('utils', function () {
+  it('callbackify should work with a callback', function (done) {
+    function fromPromise() {
+      return Promise.resolve(true);
+    }
+    utils.callbackify(fromPromise)(function (err, resp) {
+      should.not.exist(err);
+      should.exist(resp);
+      done();
+    });
+  });
+  it('fin should work without returning a function and it resolves', function () {
+    return utils.fin(Promise.resolve(), function () {
+      return {};
+    }).should.be.fullfilled;
+  });
+  it('fin should work without returning a function and it rejects', function () {
+    return utils.fin(Promise.reject(), function () {
+      return {};
+    }).should.be.rejected;
+  });
+});
+describe('put view', function () {
+  it('should work with 3 arguments', function (done) {
+    Mapreduce.putView.call({
+      put: function (doc, callback) {
+        doc.should.deep.equal({
+          _id: '_design/foo',
+          views: { 
+            bar: {
+              map: 'function () {}' 
+            }
+          }
+        });
+        callback();
+      }
+    }, 'foo/bar', function () {}, done);
+  });
+  it('should work with 4 arguments opts', function (done) {
+    Mapreduce.putView.call({
+      put: function (doc, callback) {
+        doc.should.deep.equal({
+          _id: '_design/foo',
+          views: { 
+            bar: {
+              map: 'function () {}' 
+            }
+          }
+        });
+        callback();
+      }
+    }, 'foo/bar', function () {}, {}, done);
+  });
+  it('should work with 4 arguments rev', function (done) {
+    Mapreduce.putView.call({
+      put: function (doc, callback) {
+        doc.should.deep.equal({
+          _id: '_design/foo',
+          views: { 
+            bar: {
+              map: 'function () {}' 
+            }
+          },
+          _rev: '1-foo'
+        });
+        callback();
+      }
+    }, 'foo/bar', function () {}, '1-foo', done);
+  });
+});
 function tests(dbName, dbType, viewType) {
 
   var createView;
@@ -1648,8 +1752,57 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
+    it('should query correctly after replicating and other ddoc', function () {
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map : function (doc) {
+            emit(doc.name);
+          }
+        }).then(function (queryFun) {
+          return db.bulkDocs({docs: [{name: 'foobar'}]}).then(function () {
+            return db.query(queryFun);
+          }).then(function (res) {
+            res.rows.map(function (x) {return x.key; }).should.deep.equal([
+              'foobar'
+            ], 'test db before replicating');
+            return new Pouch('local-other').then(function (db2) {
+              return db.replicate.to(db2).then(function () {
+                return db.query(queryFun);
+              }).then(function (res) {
+                res.rows.map(function (x) {return x.key; }).should.deep.equal([
+                  'foobar'
+                ], 'test db after replicating');
+                return db.put({_id: '_design/other_ddoc', views: {
+                  map: "function(doc) { emit(doc._id); }"
+                }});
+              }).then(function () {
+                  // the random ddoc adds a single change that we don't
+                  // care about. testing this increases our coverage
+                return db.query(queryFun);
+              }).then(function (res) {
+                res.rows.map(function (x) {return x.key; }).should.deep.equal([
+                  'foobar'
+                ], 'test db after adding random ddoc');
+                return db2.query(queryFun);
+              }).then(function (res) {
+                res.rows.map(function (x) {return x.key; }).should.deep.equal([
+                  'foobar'
+                ], 'test db2');
+              }).catch(function (err) {
+                return Pouch.destroy('local-other').then(function () {
+                  throw err;
+                });
+              }).then(function () {
+                return Pouch.destroy('local-other');
+              });
+            });
+          });
+        });
+      });
+    });
+
     it('should query correctly after many edits', function () {
-      this.timeout(5000);
+      this.timeout(10000);
       return new Pouch(dbName).then(function (db) {
         return createView(db, {
           map : function (doc) {
@@ -1677,8 +1830,15 @@ function tests(dbName, dbType, viewType) {
             { _id: 'i', name: 'rat king' },
             { _id: 'j', name: 'metalhead' },
             { _id: 'k', name: 'slash' },
-            { _id: 'l', name: 'ace duck' },
+            { _id: 'l', name: 'ace duck' }
           ];
+
+          for (var i = 0; i < 100; i++) {
+            docs.push({
+              _id: 'z-' + (i + 1000), // for correct string ordering
+              name: 'random foot soldier #' + i
+            });
+          }
 
           function update(res, docFun) {
             for (var i  = 0; i < res.length; i++) {
@@ -2253,6 +2413,29 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
+    it('should work with post', function () {
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map : function (doc) { emit(doc._id); }.toString()
+        }).then(function (mapFun) {
+          return db.bulkDocs({docs: [{_id : 'bazbazbazb'}]}).then(function () {
+            var i = 300;
+            var keys = [];
+            while (i--) {
+              keys.push('bazbazbazb');
+            }
+            return db.query(mapFun, {keys: keys}).then(function (resp) {
+              resp.total_rows.should.equal(1);
+              resp.rows.should.have.length(300);
+              return resp.rows.every(function (row) {
+                return row.id === 'bazbazbazb' && row.key === 'bazbazbazb';
+              });
+            });
+          }).should.become(true);
+        });
+      });
+    });
+
     if (viewType === 'persisted') {
 
       it('should delete duplicate indexes', function () {
@@ -2513,7 +2696,6 @@ function tests(dbName, dbType, viewType) {
           });
         });
       });
-
     }
   });
 }
