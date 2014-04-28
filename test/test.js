@@ -2357,6 +2357,29 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
+    it('should work with post', function () {
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map : function (doc) { emit(doc._id); }.toString()
+        }).then(function (mapFun) {
+          return db.bulkDocs({docs: [{_id : 'bazbazbazb'}]}).then(function () {
+            var i = 300;
+            var keys = [];
+            while (i--) {
+              keys.push('bazbazbazb');
+            }
+            return db.query(mapFun, {keys: keys}).then(function (resp) {
+              resp.total_rows.should.equal(1);
+              resp.rows.should.have.length(300);
+              return resp.rows.every(function (row) {
+                return row.id === 'bazbazbazb' && row.key === 'bazbazbazb';
+              });
+            });
+          }).should.become(true);
+        });
+      });
+    });
+
     if (viewType === 'persisted') {
 
       it('should delete duplicate indexes', function () {
@@ -2615,50 +2638,6 @@ function tests(dbName, dbType, viewType) {
               res.rows.should.have.length(1);
             });
           });
-        });
-      });
-      it('should work with post and ddoc', function () {
-        return new Pouch(dbName).then(function (db) {
-          return db.bulkDocs({docs: [{
-            _id : '_design/foo',
-            views : {
-              foo : { map : function (doc) { emit(doc._id); }.toString()}
-            }
-          }, {_id : 'bazbazbazb'}]}).then(function () {
-            var i = 300;
-            var keys = [];
-            while (i--) {
-              keys.push('bazbazbazb');
-            }
-            return db.query('foo', {keys: keys}).then(function (resp) {
-              resp.total_rows.should.equal(1);
-              resp.rows.should.have.length(300);
-              return resp.rows.every(function (row) {
-                return row.id === 'bazbazbazb' && row.key === 'bazbazbazb';
-              });
-            });
-          }).should.become(true);
-        });
-      });
-
-      it('should work with post and function', function () {
-        return new Pouch(dbName).then(function (db) {
-          return db.bulkDocs({docs: [{_id : 'bazbazbazb'}]}).then(function () {
-            var i = 300;
-            var keys = [];
-            while (i--) {
-              keys.push('bazbazbazb');
-            }
-            return db.query(function (doc) {
-              emit(doc._id);
-            }, {keys: keys}).then(function (resp) {
-              resp.total_rows.should.equal(1);
-              resp.rows.should.have.length(300);
-              return resp.rows.every(function (row) {
-                return row.id === 'bazbazbazb' && row.key === 'bazbazbazb';
-              });
-            });
-          }).should.become(true);
         });
       });
     }
