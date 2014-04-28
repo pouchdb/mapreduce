@@ -50,7 +50,7 @@ module.exports = function (opts) {
         };
         return view.db.get('_local/lastSeq').then(null, function (err) {
           if (err.name === 'not_found') {
-            return 0;
+            return {seq: 0};
           }
           throw err;
         }).then(function (lastSeqDoc) {

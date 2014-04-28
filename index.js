@@ -368,9 +368,9 @@ var updateView = utils.sequentialize(mainQueue, function (view) {
             }
             docIdsToEmits[change.doc._id] = indexableKeysToKeyValues;
           }
+          currentSeq = change.seq;
         }
-        queue.add(processChange(docIdsToEmits, response.last_seq));
-        currentSeq = response.last_seq;
+        queue.add(processChange(docIdsToEmits, currentSeq));
         if (results.length < CHANGES_BATCH_SIZE) {
           return complete();
         }
