@@ -1944,6 +1944,65 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
+    it('should query correctly with staggered seqs', function () {
+      this.timeout(10000);
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map : function (doc) {
+            emit(doc.name);
+          }
+        }).then(function (queryFun) {
+          var docs = [];
+
+          for (var i = 0; i < 200; i++) {
+            docs.push({
+              _id: 'doc-' + (i + 1000), // for correct string ordering
+              name: 'gen1'
+            });
+          }
+          return db.bulkDocs({docs: docs}).then(function (infos) {
+            docs.forEach(function (doc, i) {
+              doc._rev = infos[i].rev;
+              doc.name = 'gen2';
+            });
+            docs.reverse();
+            return db.bulkDocs({docs: docs});
+          }).then(function (infos) {
+            docs.forEach(function (doc, i) {
+              doc._rev = infos[i].rev;
+              doc.name = 'gen-3';
+            });
+            docs.reverse();
+            return db.bulkDocs({docs: docs});
+          }).then(function (infos) {
+            docs.forEach(function (doc, i) {
+              doc._rev = infos[i].rev;
+              doc.name = 'gen-4-odd';
+            });
+            var docsToUpdate = docs.filter(function (doc, i) {
+              return i % 2 === 1;
+            });
+            docsToUpdate.reverse();
+            return db.bulkDocs({docs: docsToUpdate});
+          }).then(function () {
+            return db.query(queryFun);
+          }).then(function (res) {
+            var expected = docs.map(function (doc, i) {
+              var key = i % 2 === 1 ? 'gen-4-odd' : 'gen-3';
+              return {key: key, id: doc._id, value: null};
+            });
+            expected.sort(function (a, b) {
+              if (a.key !== b.key) {
+                return a.key < b.key ? -1 : 1;
+              }
+              return a.id < b.id ? -1 : 1;
+            });
+            res.rows.should.deep.equal(expected);
+          });
+        });
+      });
+    });
+
     if (viewType === 'persisted') {
       it('should query correctly when stale', function () {
         return new Pouch(dbName).then(function (db) {
