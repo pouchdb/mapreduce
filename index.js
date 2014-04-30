@@ -474,14 +474,12 @@ var queryView = utils.sequentialize(mainQueue, function (view, opts) {
         toIndexableString([opts.startkey]);
     }
     if (typeof opts.endkey !== 'undefined') {
-      var inclusiveEnd = !(opts.descending);
-      if (opts.inclusive_end === false) {
+      var inclusiveEnd = opts.inclusive_end !== false;
+      if (opts.descending) {
         inclusiveEnd = !inclusiveEnd;
       }
 
-      viewOpts.endkey = inclusiveEnd ?
-        toIndexableString([opts.endkey, {}]) :
-        toIndexableString([opts.endkey]);
+      viewOpts.endkey = toIndexableString(inclusiveEnd ? [opts.endkey, {}] : [opts.endkey]);
     }
     if (typeof opts.key !== 'undefined') {
       var keyStart = toIndexableString([opts.key]);
