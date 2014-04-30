@@ -180,6 +180,7 @@ function httpQuery(db, fun, opts) {
   addHttpParam('skip', opts, params);
   addHttpParam('startkey', opts, params, true);
   addHttpParam('endkey', opts, params, true);
+  addHttpParam('inclusive_end', opts, params);
   addHttpParam('key', opts, params, true);
 
   // Format the list of parameters into a valid URI query string
@@ -512,9 +513,12 @@ var queryView = utils.sequentialize(mainQueue, function (view, opts) {
         toIndexableString([opts.startkey]);
     }
     if (typeof opts.endkey !== 'undefined') {
-      viewOpts.endkey = opts.descending ?
-        toIndexableString([opts.endkey]) :
-        toIndexableString([opts.endkey, {}]);
+      var inclusiveEnd = opts.inclusive_end !== false;
+      if (opts.descending) {
+        inclusiveEnd = !inclusiveEnd;
+      }
+
+      viewOpts.endkey = toIndexableString(inclusiveEnd ? [opts.endkey, {}] : [opts.endkey]);
     }
     if (typeof opts.key !== 'undefined') {
       var keyStart = toIndexableString([opts.key]);
