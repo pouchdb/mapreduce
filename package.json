@@ -1,6 +1,6 @@
 {
   "name": "pouchdb-mapreduce",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "Map Reduce =====",
   "main": "index.js",
   "repository": {
@@ -51,7 +51,7 @@
     "istanbul": "^0.2.7"
   },
   "peerDependencies": {
-    "pouchdb": "^2.2.0"
+    "pouchdb": "^2.1.0"
   },
   "browser": {
     "crypto": false
