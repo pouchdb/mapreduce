@@ -270,6 +270,7 @@ function tests(dbName, dbType, viewType) {
         });
       });
     }
+
     it("Test opts.startkey/opts.endkey", function () {
       return new Pouch(dbName).then(function (db) {
         return createView(db, {
@@ -308,6 +309,60 @@ function tests(dbName, dbType, viewType) {
         });
       });
     });
+
+    //TODO: split this to their own tests within a describe block
+    it("Test opts.inclusive_end = false", function () {
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map: function (doc) {
+            emit(doc.key, doc);
+          }
+        }).then(function (queryFun) {
+          return db.bulkDocs({docs: [
+            {key: 'key1'},
+            {key: 'key2'},
+            {key: 'key3'},
+            {key: 'key4'},
+            {key: 'key4'},
+            {key: 'key5'}
+          ]}).then(function () {
+            return db.query(queryFun, {
+              reduce: false,
+              endkey: 'key4',
+              inclusive_end: false
+            });
+          }).then(function (resp) {
+            resp.rows.should.have.length(3, 'endkey=key4 without inclusive end');
+            resp.rows[0].key.should.equal('key1');
+            resp.rows[2].key.should.equal('key3');
+          })
+          .then(function () {
+            return db.query(queryFun, {
+              reduce: false,
+              startkey: 'key3',
+              endkey: 'key4',
+              inclusive_end: false
+            });
+          }).then(function (resp) {
+            resp.rows.should.have.length(1, 'startkey=key3, endkey=key4 without inclusive end');
+            resp.rows[0].key.should.equal('key3');
+          }).then(function () {
+            return db.query(queryFun, {
+              reduce: false,
+              startkey: 'key4',
+              endkey: 'key1',
+              descending: true,
+              inclusive_end: false
+            });
+          }).then(function (resp) {
+            resp.rows.should
+              .have.length(4, 'startkey=key4, endkey=key1 descending without inclusive end');
+            resp.rows[0].key.should.equal('key4');
+          });
+        });
+      });
+    });
+
     it("Test opts.key", function () {
       return new Pouch(dbName).then(function (db) {
         return createView(db, {
@@ -1884,6 +1939,65 @@ function tests(dbName, dbType, viewType) {
             }).should.deep.equal(docs.map(function (doc) {
               return [doc._id, 'nameless', 'turtles'];
             }), 'key values match');
+          });
+        });
+      });
+    });
+
+    it('should query correctly with staggered seqs', function () {
+      this.timeout(10000);
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map : function (doc) {
+            emit(doc.name);
+          }
+        }).then(function (queryFun) {
+          var docs = [];
+
+          for (var i = 0; i < 200; i++) {
+            docs.push({
+              _id: 'doc-' + (i + 1000), // for correct string ordering
+              name: 'gen1'
+            });
+          }
+          return db.bulkDocs({docs: docs}).then(function (infos) {
+            docs.forEach(function (doc, i) {
+              doc._rev = infos[i].rev;
+              doc.name = 'gen2';
+            });
+            docs.reverse();
+            return db.bulkDocs({docs: docs});
+          }).then(function (infos) {
+            docs.forEach(function (doc, i) {
+              doc._rev = infos[i].rev;
+              doc.name = 'gen-3';
+            });
+            docs.reverse();
+            return db.bulkDocs({docs: docs});
+          }).then(function (infos) {
+            docs.forEach(function (doc, i) {
+              doc._rev = infos[i].rev;
+              doc.name = 'gen-4-odd';
+            });
+            var docsToUpdate = docs.filter(function (doc, i) {
+              return i % 2 === 1;
+            });
+            docsToUpdate.reverse();
+            return db.bulkDocs({docs: docsToUpdate});
+          }).then(function () {
+            return db.query(queryFun);
+          }).then(function (res) {
+            var expected = docs.map(function (doc, i) {
+              var key = i % 2 === 1 ? 'gen-4-odd' : 'gen-3';
+              return {key: key, id: doc._id, value: null};
+            });
+            expected.sort(function (a, b) {
+              if (a.key !== b.key) {
+                return a.key < b.key ? -1 : 1;
+              }
+              return a.id < b.id ? -1 : 1;
+            });
+            res.rows.should.deep.equal(expected);
           });
         });
       });

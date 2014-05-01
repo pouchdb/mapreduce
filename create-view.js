@@ -49,8 +49,9 @@ module.exports = function (opts) {
           reduceFun: reduceFun
         };
         return view.db.get('_local/lastSeq').then(null, function (err) {
-          if (err.name === 'not_found') {
-            return {seq: 0};
+          /* istanbul ignore if */
+          if (err.name !== 'not_found') {
+            throw err;
           }
         }).then(function (lastSeqDoc) {
           view.seq = lastSeqDoc ? lastSeqDoc.seq : 0;
