@@ -249,9 +249,11 @@ function defaultsTo(value) {
 }
 
 // returns a promise for a list of docs to update, based on the input docId.
-// we update the key/value docs first, then finally the metaDoc, i.e.
-// the doc that points from the sourceDB document Id to the ids of the
-// documents in the mrview database
+// we update the metaDoc first (i.e. the doc that points from the sourceDB
+// document Id to the ids of the documents in the mrview database), then
+// the key/value docs.  that way, if lightning strikes the user's computer
+// in the middle of an update, we don't write any docs that we wouldn't
+// be able to find later using the metaDoc.
 function getDocsToPersist(docId, view, docIdsToEmits) {
   var metaDocId = '_local/doc_' + docId;
   return view.db.get(metaDocId)
@@ -288,7 +290,7 @@ function getDocsToPersist(docId, view, docIdsToEmits) {
             }
           });
           metaDoc.keys = utils.uniq(newKeys.concat(metaDoc.keys));
-          kvDocs.push(metaDoc);
+          kvDocs.splice(0, 0, metaDoc);
 
           return kvDocs;
         });
