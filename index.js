@@ -247,59 +247,79 @@ function defaultsTo(value) {
     }
   };
 }
-function saveKeyValues(view, docIdsToEmits, seq) {
-  return view.db.get('_local/lastSeq')
-    .catch(defaultsTo({_id: '_local/lastSeq', seq: 0}))
-    .then(function (lastSeqDoc) {
-      return Promise.all(Object.keys(docIdsToEmits).map(function (docId) {
-        return view.db.get('_local/doc_' + docId)
-          .catch(defaultsTo({_id : '_local/doc_' + docId, keys : []}))
-          .then(function (metaDoc) {
-            return view.db.allDocs({keys : metaDoc.keys, include_docs : true}).then(function (res) {
-              var kvDocs = res.rows.map(function (row) {
-                return row.doc;
-              }).filter(function (row) {
-                return row;
-              });
 
-              var indexableKeysToKeyValues = docIdsToEmits[docId];
-              var oldKeysMap = {};
-              kvDocs.forEach(function (kvDoc) {
-                oldKeysMap[kvDoc._id] = true;
-                kvDoc._deleted = !indexableKeysToKeyValues[kvDoc._id];
-                if (!kvDoc._deleted) {
-                  kvDoc.value = indexableKeysToKeyValues[kvDoc._id];
-                }
-              });
-
-              var newKeys = Object.keys(indexableKeysToKeyValues);
-              newKeys.forEach(function (key) {
-                if (!oldKeysMap[key]) {
-                  // new doc
-                  kvDocs.push({
-                    _id : key,
-                    value : indexableKeysToKeyValues[key]
-                  });
-                }
-              });
-              metaDoc.keys = utils.uniq(newKeys.concat(metaDoc.keys));
-              kvDocs.push(metaDoc);
-
-              return kvDocs;
+// returns a promise for a list of docs to update, based on the input docId.
+// we update the key/value docs first, then finally the metaDoc, i.e.
+// the doc that points from the sourceDB document Id to the ids of the
+// documents in the mrview database
+function getDocsToPersist(docId, view, docIdsToEmits) {
+  var metaDocId = '_local/doc_' + docId;
+  return view.db.get(metaDocId)
+    .catch(defaultsTo({_id: metaDocId, keys: []}))
+    .then(function (metaDoc) {
+      return view.db.allDocs({
+        keys: metaDoc.keys,
+        include_docs: true
+      }).then(function (res) {
+          var kvDocs = res.rows.map(function (row) {
+            return row.doc;
+          }).filter(function (row) {
+              return row;
             });
+
+          var indexableKeysToKeyValues = docIdsToEmits[docId];
+          var oldKeysMap = {};
+          kvDocs.forEach(function (kvDoc) {
+            oldKeysMap[kvDoc._id] = true;
+            kvDoc._deleted = !indexableKeysToKeyValues[kvDoc._id];
+            if (!kvDoc._deleted) {
+              kvDoc.value = indexableKeysToKeyValues[kvDoc._id];
+            }
           });
+
+          var newKeys = Object.keys(indexableKeysToKeyValues);
+          newKeys.forEach(function (key) {
+            if (!oldKeysMap[key]) {
+              // new doc
+              kvDocs.push({
+                _id: key,
+                value: indexableKeysToKeyValues[key]
+              });
+            }
+          });
+          metaDoc.keys = utils.uniq(newKeys.concat(metaDoc.keys));
+          kvDocs.push(metaDoc);
+
+          return kvDocs;
+        });
+    });
+}
+
+// updates all emitted key/value docs and metaDocs in the mrview database
+// for the given batch of documents from the source database
+function saveKeyValues(view, docIdsToEmits, seq) {
+  var seqDocId = '_local/lastSeq';
+  return view.db.get(seqDocId)
+  .catch(defaultsTo({_id: seqDocId, seq: 0}))
+  .then(function (lastSeqDoc) {
+    var docIds = Object.keys(docIdsToEmits);
+    return Promise.all(docIds.map(function (docId) {
+        return getDocsToPersist(docId, view, docIdsToEmits);
       })).then(function (listOfDocsToPersist) {
         var docsToPersist = [];
         listOfDocsToPersist.forEach(function (docList) {
           docsToPersist = docsToPersist.concat(docList);
         });
 
+        // update the seq doc last, so that if a meteor strikes the user's
+        // computer in the middle of an update, we can apply the idempotent
+        // batch update operation again
         lastSeqDoc.seq = seq;
         docsToPersist.push(lastSeqDoc);
 
         return view.db.bulkDocs({docs : docsToPersist});
       });
-    });
+  });
 }
 
 var updateView = utils.sequentialize(mainQueue, function (view) {
