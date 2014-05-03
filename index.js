@@ -246,58 +246,75 @@ function defaultsTo(value) {
     }
   };
 }
-function saveKeyValues(view, docIdsToEmits, seq) {
-  return view.db.get('_local/lastSeq')
-    .then(null, defaultsTo({_id: '_local/lastSeq', seq: 0}))
-    .then(function (lastSeqDoc) {
-      return Promise.all(Object.keys(docIdsToEmits).map(function (docId) {
-        return view.db.get('_local/doc_' + docId)
-          .then(null, defaultsTo({_id : '_local/doc_' + docId, keys : []}))
-          .then(function (metaDoc) {
-            return view.db.allDocs({keys : metaDoc.keys, include_docs : true}).then(function (res) {
-              var kvDocs = res.rows.map(function (row) {
-                return row.doc;
-              }).filter(function (row) {
-                return row;
-              });
 
-              var indexableKeysToKeyValues = docIdsToEmits[docId];
-              var oldKeysMap = {};
-              kvDocs.forEach(function (kvDoc) {
-                oldKeysMap[kvDoc._id] = true;
-                kvDoc._deleted = !indexableKeysToKeyValues[kvDoc._id];
-                if (!kvDoc._deleted) {
-                  kvDoc.value = indexableKeysToKeyValues[kvDoc._id];
-                }
-              });
-
-              var newKeys = Object.keys(indexableKeysToKeyValues);
-              newKeys.forEach(function (key) {
-                if (!oldKeysMap[key]) {
-                  // new doc
-                  kvDocs.push({
-                    _id : key,
-                    value : indexableKeysToKeyValues[key]
-                  });
-                }
-              });
-              metaDoc.keys = utils.uniq(newKeys.concat(metaDoc.keys));
-              kvDocs.push(metaDoc);
-
-              return kvDocs;
-            });
-          });
-      })).then(function (listOfDocsToPersist) {
-        var docsToPersist = [];
-        listOfDocsToPersist.forEach(function (docList) {
-          docsToPersist = docsToPersist.concat(docList);
+// returns a promise for a list of docs to update, based on the input docId.
+// we update the key/value docs first, then finally the metaDoc, i.e.
+// the doc that points from the sourceDB document Id to the ids of the
+// documents in the mrview database
+function getDocsToPersist(docId, view, docIdsToEmits) {
+  var metaDocId = '_local/doc_' + docId;
+  return view.db.get(metaDocId)
+    .catch(defaultsTo({_id: metaDocId, keys: []}))
+    .then(function (metaDoc) {
+      return view.db.allDocs({
+        keys: metaDoc.keys,
+        include_docs: true
+      }).then(function (res) {
+        var kvDocs = res.rows.map(function (row) {
+          return row.doc;
+        }).filter(function (row) {
+          return row;
         });
 
-        lastSeqDoc.seq = seq;
-        docsToPersist.push(lastSeqDoc);
+        var indexableKeysToKeyValues = docIdsToEmits[docId];
+        var oldKeysMap = {};
+        kvDocs.forEach(function (kvDoc) {
+          oldKeysMap[kvDoc._id] = true;
+          kvDoc._deleted = !indexableKeysToKeyValues[kvDoc._id];
+          if (!kvDoc._deleted) {
+            kvDoc.value = indexableKeysToKeyValues[kvDoc._id];
+          }
+        });
 
-        return view.db.bulkDocs({docs : docsToPersist});
+        var newKeys = Object.keys(indexableKeysToKeyValues);
+        newKeys.forEach(function (key) {
+          if (!oldKeysMap[key]) {
+            // new doc
+            kvDocs.push({
+              _id: key,
+              value: indexableKeysToKeyValues[key]
+            });
+          }
+        });
+        metaDoc.keys = utils.uniq(newKeys.concat(metaDoc.keys));
+        kvDocs.push(metaDoc);
+
+        return kvDocs;
       });
+    });
+}
+
+// updates all emitted key/value docs and metaDocs in the mrview database
+// for the given batch of documents from the source database
+function saveKeyValues(view, docIdsToEmits, seq) {
+  var seqDocId = '_local/lastSeq';
+  return view.db.get(seqDocId)
+    .catch(defaultsTo({_id: seqDocId, seq: 0}))
+    .then(function (lastSeqDoc) {
+      var docIds = Object.keys(docIdsToEmits);
+      return Promise.all(docIds.map(function (docId) {
+          return getDocsToPersist(docId, view, docIdsToEmits);
+        })).then(function (listsOfDocsToPersist) {
+          var docsToPersist = utils.flatten(listsOfDocsToPersist);
+
+          // update the seq doc last, so that if a meteor strikes the user's
+          // computer in the middle of an update, we can apply the idempotent
+          // batch update operation again
+          lastSeqDoc.seq = seq;
+          docsToPersist.push(lastSeqDoc);
+
+          return view.db.bulkDocs({docs: docsToPersist});
+        });
     });
 }
 
@@ -487,12 +504,6 @@ var queryView = utils.sequentialize(mainQueue, function (view, opts) {
     }
   }
 
-  var flatten = function (array) {
-    return array.reduce(function (prev, cur) {
-      return prev.concat(cur);
-    });
-  };
-
   if (typeof opts.keys !== 'undefined') {
     var keys = opts.keys;
     var fetchPromises = keys.map(function (key) {
@@ -502,7 +513,7 @@ var queryView = utils.sequentialize(mainQueue, function (view, opts) {
       };
       return fetchFromView(viewOpts);
     });
-    return Promise.all(fetchPromises).then(flatten).then(onMapResultsReady);
+    return Promise.all(fetchPromises).then(utils.flatten).then(onMapResultsReady);
   } else { // normal query, no 'keys'
     var viewOpts = {
       descending : opts.descending
