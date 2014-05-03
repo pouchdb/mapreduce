@@ -82,3 +82,11 @@ exports.MD5 = function (string) {
     return md5(string);
   }
 };
+
+exports.flatten = function (array) {
+  var result = [];
+  for (var i = 0, len = array.length; i < len; i++) {
+    result = result.concat(array[i]);
+  }
+  return result;
+};
