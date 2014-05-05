@@ -9,12 +9,13 @@ module.exports = function (opts) {
   var viewName = opts.viewName;
   var mapFun = opts.map;
   var reduceFun = opts.reduce;
-  var randomizer = opts.randomizer;
+  var temporary = opts.temporary;
 
+  // the "undefined" part is for backwards compatibility
   var viewSignature = mapFun.toString() + (reduceFun && reduceFun.toString()) +
-    (randomizer && randomizer.toString());
+    'undefined';
 
-  if (sourceDB._cachedViews) {
+  if (!temporary && sourceDB._cachedViews) {
     var cachedView = sourceDB._cachedViews[viewSignature];
     if (cachedView) {
       return Promise.resolve(cachedView);
@@ -22,7 +23,9 @@ module.exports = function (opts) {
   }
 
   return sourceDB.info().then(function (info) {
-    var depDbName = info.db_name + '-mrview-' + utils.MD5(viewSignature);
+
+    var depDbName = info.db_name + '-mrview-' +
+      (temporary ? 'temp' : utils.MD5(viewSignature));
 
     // save the view name in the source PouchDB so it can be cleaned up if necessary
     // (e.g. when the _design doc is deleted, remove all associated view data)
@@ -55,8 +58,7 @@ module.exports = function (opts) {
           }
         }).then(function (lastSeqDoc) {
           view.seq = lastSeqDoc ? lastSeqDoc.seq : 0;
-          if (!randomizer) {
-            // randomizer implies the view is temporary, no need to cache it
+          if (!temporary) {
             sourceDB._cachedViews = sourceDB._cachedViews || {};
             sourceDB._cachedViews[viewSignature] = view;
             view.db.on('destroyed', function () {

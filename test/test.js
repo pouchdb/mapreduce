@@ -243,6 +243,24 @@ function tests(dbName, dbType, viewType) {
       });
     }
     if (viewType === 'temp') {
+
+      it('Test simultaneous temp views', function () {
+        return new Pouch(dbName).then(function (db) {
+          return db.put({_id: '0', foo: 1, bar: 2, baz: 3}).then(function () {
+            return Promise.all(['foo', 'bar', 'baz'].map(function (key, i) {
+              var fun = 'function(doc){emit(doc.' + key + ');}';
+              return db.query({map: fun}).then(function (res) {
+                res.rows.should.deep.equal([{
+                  id: '0',
+                  key: i + 1,
+                  value: null
+                }]);
+              });
+            }));
+          });
+        });
+      });
+
       it("Test passing just a function", function () {
         return new Pouch(dbName).then(function (db) {
           return db.bulkDocs({docs: [

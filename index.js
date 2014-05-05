@@ -17,6 +17,7 @@ if ((typeof console !== 'undefined') && (typeof console.log === 'function')) {
 var utils = require('./utils');
 var Promise = utils.Promise;
 var mainQueue = new TaskQueue();
+var tempViewQueue = new TaskQueue();
 var CHANGES_BATCH_SIZE = 50;
 
 function parseViewName(name) {
@@ -604,22 +605,24 @@ function queryPromised(db, fun, opts) {
     // temp_view
     checkQueryParseError(opts, fun);
 
-    var randomizer = Math.round(Math.random()  * 1000000) + 1;
     var createViewOpts = {
       db : db,
       viewName : 'temp_view/temp_view',
       map : fun.map,
       reduce : fun.reduce,
-      randomizer : randomizer
+      temporary : true
     };
-    return createView(createViewOpts).then(function (view) {
-      function cleanup() {
-        return view.db.destroy();
-      }
-      return utils.fin(updateView(view).then(function () {
-        return queryView(view, opts);
-      }), cleanup);
+    tempViewQueue.add(function () {
+      return createView(createViewOpts).then(function (view) {
+        function cleanup() {
+          return view.db.destroy();
+        }
+        return utils.fin(updateView(view).then(function () {
+          return queryView(view, opts);
+        }), cleanup);
+      });
     });
+    return tempViewQueue.finish();
   } else {
     // persistent view
     var fullViewName = fun;
