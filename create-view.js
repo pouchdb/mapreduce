@@ -48,7 +48,7 @@ module.exports = function (opts) {
           mapFun: mapFun,
           reduceFun: reduceFun
         };
-        return view.db.get('_local/lastSeq').then(null, function (err) {
+        return view.db.get('_local/lastSeq').catch(function (err) {
           /* istanbul ignore if */
           if (err.name !== 'not_found') {
             throw err;

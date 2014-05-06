@@ -248,11 +248,11 @@ function defaultsTo(value) {
 }
 function saveKeyValues(view, docIdsToEmits, seq) {
   return view.db.get('_local/lastSeq')
-    .then(null, defaultsTo({_id: '_local/lastSeq', seq: 0}))
+    .catch(defaultsTo({_id: '_local/lastSeq', seq: 0}))
     .then(function (lastSeqDoc) {
       return Promise.all(Object.keys(docIdsToEmits).map(function (docId) {
         return view.db.get('_local/doc_' + docId)
-          .then(null, defaultsTo({_id : '_local/doc_' + docId, keys : []}))
+          .catch(defaultsTo({_id : '_local/doc_' + docId, keys : []}))
           .then(function (metaDoc) {
             return view.db.allDocs({keys : metaDoc.keys, include_docs : true}).then(function (res) {
               var kvDocs = res.rows.map(function (row) {
