@@ -9,7 +9,7 @@ function TaskQueue() {
   this.promise = new Promise(function (fulfill) {fulfill(); });
 }
 TaskQueue.prototype.add = function (promiseFactory) {
-  this.promise = this.promise.then(null, function () {
+  this.promise = this.promise.catch(function () {
     // just recover
   }).then(function () {
     return promiseFactory();
