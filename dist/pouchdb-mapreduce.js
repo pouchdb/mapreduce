@@ -10,12 +10,13 @@ module.exports = function (opts) {
   var viewName = opts.viewName;
   var mapFun = opts.map;
   var reduceFun = opts.reduce;
-  var randomizer = opts.randomizer;
+  var temporary = opts.temporary;
 
+  // the "undefined" part is for backwards compatibility
   var viewSignature = mapFun.toString() + (reduceFun && reduceFun.toString()) +
-    (randomizer && randomizer.toString());
+    'undefined';
 
-  if (sourceDB._cachedViews) {
+  if (!temporary && sourceDB._cachedViews) {
     var cachedView = sourceDB._cachedViews[viewSignature];
     if (cachedView) {
       return Promise.resolve(cachedView);
@@ -23,7 +24,9 @@ module.exports = function (opts) {
   }
 
   return sourceDB.info().then(function (info) {
-    var depDbName = info.db_name + '-mrview-' + utils.MD5(viewSignature);
+
+    var depDbName = info.db_name + '-mrview-' +
+      (temporary ? 'temp' : utils.MD5(viewSignature));
 
     // save the view name in the source PouchDB so it can be cleaned up if necessary
     // (e.g. when the _design doc is deleted, remove all associated view data)
@@ -49,15 +52,14 @@ module.exports = function (opts) {
           mapFun: mapFun,
           reduceFun: reduceFun
         };
-        return view.db.get('_local/lastSeq').then(null, function (err) {
+        return view.db.get('_local/lastSeq').catch(function (err) {
           /* istanbul ignore if */
           if (err.name !== 'not_found') {
             throw err;
           }
         }).then(function (lastSeqDoc) {
           view.seq = lastSeqDoc ? lastSeqDoc.seq : 0;
-          if (!randomizer) {
-            // randomizer implies the view is temporary, no need to cache it
+          if (!temporary) {
             sourceDB._cachedViews = sourceDB._cachedViews || {};
             sourceDB._cachedViews[viewSignature] = view;
             view.db.on('destroyed', function () {
@@ -71,7 +73,7 @@ module.exports = function (opts) {
   });
 };
 
-},{"./upsert":30,"./utils":31}],2:[function(require,module,exports){
+},{"./upsert":34,"./utils":35}],2:[function(require,module,exports){
 'use strict';
 
 module.exports = function (func, emit, sum, log, isArray, toJSON) {
@@ -99,6 +101,7 @@ if ((typeof console !== 'undefined') && (typeof console.log === 'function')) {
 var utils = require('./utils');
 var Promise = utils.Promise;
 var mainQueue = new TaskQueue();
+var tempViewQueue = new TaskQueue();
 var CHANGES_BATCH_SIZE = 50;
 
 function parseViewName(name) {
@@ -328,59 +331,81 @@ function defaultsTo(value) {
     }
   };
 }
-function saveKeyValues(view, docIdsToEmits, seq) {
-  return view.db.get('_local/lastSeq')
-    .then(null, defaultsTo({_id: '_local/lastSeq', seq: 0}))
-    .then(function (lastSeqDoc) {
-      return Promise.all(Object.keys(docIdsToEmits).map(function (docId) {
-        return view.db.get('_local/doc_' + docId)
-          .then(null, defaultsTo({_id : '_local/doc_' + docId, keys : []}))
-          .then(function (metaDoc) {
-            return view.db.allDocs({keys : metaDoc.keys, include_docs : true}).then(function (res) {
-              var kvDocs = res.rows.map(function (row) {
-                return row.doc;
-              }).filter(function (row) {
-                return row;
-              });
 
-              var indexableKeysToKeyValues = docIdsToEmits[docId];
-              var oldKeysMap = {};
-              kvDocs.forEach(function (kvDoc) {
-                oldKeysMap[kvDoc._id] = true;
-                kvDoc._deleted = !indexableKeysToKeyValues[kvDoc._id];
-                if (!kvDoc._deleted) {
-                  kvDoc.value = indexableKeysToKeyValues[kvDoc._id];
-                }
-              });
-
-              var newKeys = Object.keys(indexableKeysToKeyValues);
-              newKeys.forEach(function (key) {
-                if (!oldKeysMap[key]) {
-                  // new doc
-                  kvDocs.push({
-                    _id : key,
-                    value : indexableKeysToKeyValues[key]
-                  });
-                }
-              });
-              metaDoc.keys = utils.uniq(newKeys.concat(metaDoc.keys));
-              kvDocs.push(metaDoc);
-
-              return kvDocs;
+// returns a promise for a list of docs to update, based on the input docId.
+// we update the metaDoc first (i.e. the doc that points from the sourceDB
+// document Id to the ids of the documents in the mrview database), then
+// the key/value docs.  that way, if lightning strikes the user's computer
+// in the middle of an update, we don't write any docs that we wouldn't
+// be able to find later using the metaDoc.
+function getDocsToPersist(docId, view, docIdsToEmits) {
+  var metaDocId = '_local/doc_' + docId;
+  return view.db.get(metaDocId)
+    .catch(defaultsTo({_id: metaDocId, keys: []}))
+    .then(function (metaDoc) {
+      return view.db.allDocs({
+        keys: metaDoc.keys,
+        include_docs: true
+      }).then(function (res) {
+          var kvDocs = res.rows.map(function (row) {
+            return row.doc;
+          }).filter(function (row) {
+              return row;
             });
+
+          var indexableKeysToKeyValues = docIdsToEmits[docId];
+          var oldKeysMap = {};
+          kvDocs.forEach(function (kvDoc) {
+            oldKeysMap[kvDoc._id] = true;
+            kvDoc._deleted = !indexableKeysToKeyValues[kvDoc._id];
+            if (!kvDoc._deleted) {
+              kvDoc.value = indexableKeysToKeyValues[kvDoc._id];
+            }
           });
+
+          var newKeys = Object.keys(indexableKeysToKeyValues);
+          newKeys.forEach(function (key) {
+            if (!oldKeysMap[key]) {
+              // new doc
+              kvDocs.push({
+                _id: key,
+                value: indexableKeysToKeyValues[key]
+              });
+            }
+          });
+          metaDoc.keys = utils.uniq(newKeys.concat(metaDoc.keys));
+          kvDocs.splice(0, 0, metaDoc);
+
+          return kvDocs;
+        });
+    });
+}
+
+// updates all emitted key/value docs and metaDocs in the mrview database
+// for the given batch of documents from the source database
+function saveKeyValues(view, docIdsToEmits, seq) {
+  var seqDocId = '_local/lastSeq';
+  return view.db.get(seqDocId)
+  .catch(defaultsTo({_id: seqDocId, seq: 0}))
+  .then(function (lastSeqDoc) {
+    var docIds = Object.keys(docIdsToEmits);
+    return Promise.all(docIds.map(function (docId) {
+        return getDocsToPersist(docId, view, docIdsToEmits);
       })).then(function (listOfDocsToPersist) {
         var docsToPersist = [];
         listOfDocsToPersist.forEach(function (docList) {
           docsToPersist = docsToPersist.concat(docList);
         });
 
+        // update the seq doc last, so that if a meteor strikes the user's
+        // computer in the middle of an update, we can apply the idempotent
+        // batch update operation again
         lastSeqDoc.seq = seq;
         docsToPersist.push(lastSeqDoc);
 
         return view.db.bulkDocs({docs : docsToPersist});
       });
-    });
+  });
 }
 
 var updateView = utils.sequentialize(mainQueue, function (view) {
@@ -686,22 +711,24 @@ function queryPromised(db, fun, opts) {
     // temp_view
     checkQueryParseError(opts, fun);
 
-    var randomizer = Math.round(Math.random()  * 1000000) + 1;
     var createViewOpts = {
       db : db,
       viewName : 'temp_view/temp_view',
       map : fun.map,
       reduce : fun.reduce,
-      randomizer : randomizer
+      temporary : true
     };
-    return createView(createViewOpts).then(function (view) {
-      function cleanup() {
-        return view.db.destroy();
-      }
-      return utils.fin(updateView(view).then(function () {
-        return queryView(view, opts);
-      }), cleanup);
+    tempViewQueue.add(function () {
+      return createView(createViewOpts).then(function (view) {
+        function cleanup() {
+          return view.db.destroy();
+        }
+        return utils.fin(updateView(view).then(function () {
+          return queryView(view, opts);
+        }), cleanup);
+      });
     });
+    return tempViewQueue.finish();
   } else {
     // persistent view
     var fullViewName = fun;
@@ -828,7 +855,7 @@ function QueryParseError(message) {
 
 utils.inherits(QueryParseError, Error);
 
-},{"./create-view":1,"./evalfunc":2,"./taskqueue":29,"./utils":31,"pouchdb-collate":27}],4:[function(require,module,exports){
+},{"./create-view":1,"./evalfunc":2,"./taskqueue":33,"./utils":35,"pouchdb-collate":31}],4:[function(require,module,exports){
 'use strict';
 
 module.exports = argsArray;
@@ -1018,14 +1045,13 @@ module.exports = INTERNAL;
 function INTERNAL() {}
 },{}],10:[function(require,module,exports){
 'use strict';
-var INTERNAL = require('./INTERNAL');
 var Promise = require('./promise');
 var reject = require('./reject');
 var resolve = require('./resolve');
-
+var noArray = reject(new TypeError('must be an array'));
 module.exports = function all(iterable) {
   if (Object.prototype.toString.call(iterable) !== '[object Array]') {
-    return reject(new TypeError('must be an array'));
+    return noArray;
   }
   var len = iterable.length;
   if (!len) {
@@ -1034,24 +1060,24 @@ module.exports = function all(iterable) {
   var values = [];
   var resolved = 0;
   var i = -1;
-  var promise = new Promise(INTERNAL);
-  function allResolver(value, i) {
-    resolve(value).then(function (outValue) {
-      values[i] = outValue;
-      if (++resolved === len) {
-        promise.resolve(values);
-      }
-    }, function (error) {
-      promise.reject(error);
-    });
-  }
-  
-  while (++i < len) {
-    allResolver(iterable[i], i);
-  }
-  return promise;
+  return new Promise(function (fulfill, reject) {
+    function allResolver(value, i) {
+      resolve(value).then(function (outValue) {
+        values[i] = outValue;
+        if (++resolved === len) {
+          fulfill(values);
+        }
+      }, function (error) {
+        reject(error);
+      });
+    }
+    
+    while (++i < len) {
+      allResolver(iterable[i], i);
+    }
+  });
 };
-},{"./INTERNAL":9,"./promise":14,"./reject":15,"./resolve":16}],11:[function(require,module,exports){
+},{"./promise":15,"./reject":17,"./resolve":18}],11:[function(require,module,exports){
 'use strict';
 
 module.exports = getThen;
@@ -1066,12 +1092,49 @@ function getThen(obj) {
   }
 }
 },{}],12:[function(require,module,exports){
+'use strict';
+var tryCatch = require('./tryCatch');
+var getThen = require('./getThen');
+var resolveThenable = require('./resolveThenable');
+var states = require('./states');
+
+exports.resolve = function (self, value) {
+  var result = tryCatch(getThen, value);
+  if (result.status === 'error') {
+    return exports.reject(self, result.value);
+  }
+  var thenable = result.value;
+
+  if (thenable) {
+    resolveThenable.safely(self, thenable);
+  } else {
+    self.state = states.FULFILLED;
+    self.outcome = value;
+    var i = -1;
+    var len = self.queue.length;
+    while (++i < len) {
+      self.queue[i].callFulfilled(value);
+    }
+  }
+  return self;
+};
+exports.reject = function (self, error) {
+  self.state = states.REJECTED;
+  self.outcome = error;
+  var i = -1;
+  var len = self.queue.length;
+  while (++i < len) {
+    self.queue[i].callRejected(error);
+  }
+  return self;
+};
+},{"./getThen":11,"./resolveThenable":19,"./states":20,"./tryCatch":21}],13:[function(require,module,exports){
 module.exports = exports = require('./promise');
 
 exports.resolve = require('./resolve');
 exports.reject = require('./reject');
 exports.all = require('./all');
-},{"./all":10,"./promise":14,"./reject":15,"./resolve":16}],13:[function(require,module,exports){
+},{"./all":10,"./promise":15,"./reject":17,"./resolve":18}],14:[function(require,module,exports){
 'use strict';
 
 module.exports = once;
@@ -1089,19 +1152,15 @@ function once() {
     };
   };
 }
-},{}],14:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
 'use strict';
 
 var unwrap = require('./unwrap');
 var INTERNAL = require('./INTERNAL');
-var once = require('./once');
-var tryCatch = require('./tryCatch');
-var getThen = require('./getThen');
+var resolveThenable = require('./resolveThenable');
+var states = require('./states');
+var QueueItem = require('./queueItem');
 
-// Lazy man's symbols for states
-var PENDING = ['PENDING'],
-  FULFILLED = ['FULFILLED'],
-  REJECTED = ['REJECTED'];
 module.exports = Promise;
 function Promise(resolver) {
   if (!(this instanceof Promise)) {
@@ -1110,42 +1169,12 @@ function Promise(resolver) {
   if (typeof resolver !== 'function') {
     throw new TypeError('reslover must be a function');
   }
-  this.state = PENDING;
+  this.state = states.PENDING;
   this.queue = [];
   if (resolver !== INTERNAL) {
-    safelyResolveThenable(this, resolver);
+    resolveThenable.safely(this, resolver);
   }
 }
-Promise.prototype.resolve = function (value) {
-  var result = tryCatch(getThen, value);
-  if (result.status === 'error') {
-    return this.reject(result.value);
-  }
-  var thenable = result.value;
-
-  if (thenable) {
-    safelyResolveThenable(this, thenable);
-  } else {
-    this.state = FULFILLED;
-    this.outcome = value;
-    var i = -1;
-    var len = this.queue.length;
-    while (++i < len) {
-      this.queue[i].callFulfilled(value);
-    }
-  }
-  return this;
-};
-Promise.prototype.reject = function (error) {
-  this.state = REJECTED;
-  this.outcome = error;
-  var i = -1;
-  var len = this.queue.length;
-  while (++i < len) {
-    this.queue[i].callRejected(error);
-  }
-  return this;
-};
 
 Promise.prototype['catch'] = function (onRejected) {
   return this.then(null, onRejected);
@@ -1153,93 +1182,84 @@ Promise.prototype['catch'] = function (onRejected) {
 Promise.prototype.then = function (onFulfilled, onRejected) {
   var onFulfilledFunc = typeof onFulfilled === 'function';
   var onRejectedFunc = typeof onRejected === 'function';
-  if (!onFulfilledFunc && this.state === FULFILLED || !onRejected && this.state === REJECTED) {
+  if (typeof onFulfilled !== 'function' && this.state === states.FULFILLED ||
+    typeof onRejected !== 'function' && this.state === states.REJECTED) {
     return this;
   }
   var promise = new Promise(INTERNAL);
 
-  var thenHandler =  {
-    promise: promise,
-  };
-  if (this.state !== REJECTED) {
-    if (onFulfilledFunc) {
-      thenHandler.callFulfilled = function (value) {
-        unwrap(promise, onFulfilled, value);
-      };
-    } else {
-      thenHandler.callFulfilled = function (value) {
-        promise.resolve(value);
-      };
-    }
-  }
-  if (this.state !== FULFILLED) {
-    if (onRejectedFunc) {
-      thenHandler.callRejected = function (value) {
-        unwrap(promise, onRejected, value);
-      };
-    } else {
-      thenHandler.callRejected = function (value) {
-        promise.reject(value);
-      };
-    }
-  }
-  if (this.state === FULFILLED) {
-    thenHandler.callFulfilled(this.outcome);
-  } else if (this.state === REJECTED) {
-    thenHandler.callRejected(this.outcome);
+  
+  if (this.state !== states.PENDING) {
+    var resolver = this.state === states.FULFILLED ? onFulfilled: onRejected;
+    unwrap(promise, resolver, this.outcome);
   } else {
-    this.queue.push(thenHandler);
+    this.queue.push(new QueueItem(promise, onFulfilled, onRejected));
   }
 
   return promise;
 };
-function safelyResolveThenable(self, thenable) {
-  // Either fulfill, reject or reject with error
-  var onceWrapper = once();
-  var onError = onceWrapper(function (value) {
-    return self.reject(value);
-  });
-  var result = tryCatch(function () {
-    thenable(
-      onceWrapper(function (value) {
-        return self.resolve(value);
-      }),
-      onError
-    );
-  });
-  if (result.status === 'error') {
-    onError(result.value);
+
+},{"./INTERNAL":9,"./queueItem":16,"./resolveThenable":19,"./states":20,"./unwrap":22}],16:[function(require,module,exports){
+'use strict';
+var handlers = require('./handlers');
+var unwrap = require('./unwrap');
+
+module.exports = QueueItem;
+function QueueItem(promise, onFulfilled, onRejected) {
+  this.promise = promise;
+  if (typeof onFulfilled === 'function') {
+    this.onFulfilled = onFulfilled;
+    this.callFulfilled = this.otherCallFulfilled;
+  }
+  if (typeof onRejected === 'function') {
+    this.onRejected = onRejected;
+    this.callRejected = this.otherCallRejected;
   }
 }
-},{"./INTERNAL":9,"./getThen":11,"./once":13,"./tryCatch":17,"./unwrap":18}],15:[function(require,module,exports){
+QueueItem.prototype.callFulfilled = function (value) {
+  handlers.resolve(this.promise, value);
+};
+QueueItem.prototype.otherCallFulfilled = function (value) {
+  unwrap(this.promise, this.onFulfilled, value);
+};
+QueueItem.prototype.callRejected = function (value) {
+  handlers.reject(this.promise, value);
+};
+QueueItem.prototype.otherCallRejected = function (value) {
+  unwrap(this.promise, this.onRejected, value);
+};
+},{"./handlers":12,"./unwrap":22}],17:[function(require,module,exports){
 'use strict';
 
 var Promise = require('./promise');
 var INTERNAL = require('./INTERNAL');
-
+var handlers = require('./handlers');
 module.exports = reject;
 
 function reject(reason) {
 	var promise = new Promise(INTERNAL);
-	return promise.reject(reason);
+	return handlers.reject(promise, reason);
 }
-},{"./INTERNAL":9,"./promise":14}],16:[function(require,module,exports){
+},{"./INTERNAL":9,"./handlers":12,"./promise":15}],18:[function(require,module,exports){
 'use strict';
 
 var Promise = require('./promise');
 var INTERNAL = require('./INTERNAL');
-
+var handlers = require('./handlers');
 module.exports = resolve;
 
-var FALSE = new Promise(INTERNAL).resolve(false);
-var NULL = new Promise(INTERNAL).resolve(null);
-var UNDEFINED = new Promise(INTERNAL).resolve(void 0);
-var ZERO = new Promise(INTERNAL).resolve(0);
-var EMPTYSTRING = new Promise(INTERNAL).resolve('');
+var FALSE = handlers.resolve(new Promise(INTERNAL), false);
+var NULL = handlers.resolve(new Promise(INTERNAL), null);
+var UNDEFINED = handlers.resolve(new Promise(INTERNAL), void 0);
+var ZERO = handlers.resolve(new Promise(INTERNAL), 0);
+var EMPTYSTRING = handlers.resolve(new Promise(INTERNAL), '');
 
 function resolve(value) {
   if (value) {
-    return new Promise(INTERNAL).resolve(value);
+    if (value instanceof Promise) {
+      return value;
+    }
+    return handlers.resolve(new Promise(INTERNAL), value);
   }
   var valueType = typeof value;
   switch (valueType) {
@@ -1255,7 +1275,37 @@ function resolve(value) {
       return EMPTYSTRING;
   }
 }
-},{"./INTERNAL":9,"./promise":14}],17:[function(require,module,exports){
+},{"./INTERNAL":9,"./handlers":12,"./promise":15}],19:[function(require,module,exports){
+'use strict';
+var once = require('./once');
+var handlers = require('./handlers');
+var tryCatch = require('./tryCatch');
+function safelyResolveThenable(self, thenable) {
+  // Either fulfill, reject or reject with error
+  var onceWrapper = once();
+  var onError = onceWrapper(function (value) {
+    return handlers.reject(self, value);
+  });
+  var result = tryCatch(function () {
+    thenable(
+      onceWrapper(function (value) {
+        return handlers.resolve(self, value);
+      }),
+      onError
+    );
+  });
+  if (result.status === 'error') {
+    onError(result.value);
+  }
+}
+exports.safely = safelyResolveThenable;
+},{"./handlers":12,"./once":14,"./tryCatch":21}],20:[function(require,module,exports){
+// Lazy man's symbols for states
+
+exports.REJECTED = ['REJECTED'];
+exports.FULFILLED = ['FULFILLED'];
+exports.PENDING = ['PENDING'];
+},{}],21:[function(require,module,exports){
 'use strict';
 
 module.exports = tryCatch;
@@ -1271,11 +1321,11 @@ function tryCatch(func, value) {
   }
   return out;
 }
-},{}],18:[function(require,module,exports){
+},{}],22:[function(require,module,exports){
 'use strict';
 
 var immediate = require('immediate');
-
+var handlers = require('./handlers');
 module.exports = unwrap;
 
 function unwrap(promise, func, value) {
@@ -1284,21 +1334,21 @@ function unwrap(promise, func, value) {
     try {
       returnValue = func(value);
     } catch (e) {
-      return promise.reject(e);
+      return handlers.reject(promise, e);
     }
     if (returnValue === promise) {
-      promise.reject(new TypeError('Cannot resolve promise with itself'));
+      handlers.reject(promise, new TypeError('Cannot resolve promise with itself'));
     } else {
-      promise.resolve(returnValue);
+      handlers.resolve(promise, returnValue);
     }
   });
 }
-},{"immediate":20}],19:[function(require,module,exports){
+},{"./handlers":12,"immediate":24}],23:[function(require,module,exports){
 'use strict';
 exports.test = function () {
   return false;
 };
-},{}],20:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 'use strict';
 var types = [
   require('./nextTick'),
@@ -1310,13 +1360,12 @@ var types = [
 ];
 var handlerQueue = [];
 function drainQueue() {
-  var i = 0,
-  task,
-  innerQueue = handlerQueue;
-  handlerQueue = [];
-  while ((task = innerQueue[i++])) {
+  var task;
+  var i = -1;
+  while ((task = handlerQueue[++i])) {
     task();
   }
+  handlerQueue = [];
 }
 var nextTick;
 var i = -1;
@@ -1352,10 +1401,15 @@ module.exports.clear = function (n) {
   return this;
 };
 
-},{"./messageChannel":21,"./mutation":22,"./nextTick":19,"./postMessage":23,"./stateChange":24,"./timeout":25}],21:[function(require,module,exports){
+},{"./messageChannel":25,"./mutation":26,"./nextTick":23,"./postMessage":27,"./stateChange":28,"./timeout":29}],25:[function(require,module,exports){
 var global=typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {};'use strict';
 
 exports.test = function () {
+  if (global.setImmediate) {
+    // we can only get here in IE10
+    // which doesn't handel postMessage well
+    return false;
+  }
   return typeof global.MessageChannel !== 'undefined';
 };
 
@@ -1366,7 +1420,7 @@ exports.install = function (func) {
     channel.port2.postMessage(0);
   };
 };
-},{}],22:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 var global=typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {};'use strict';
 //based off rsvp https://github.com/tildeio/rsvp.js
 //license https://github.com/tildeio/rsvp.js/blob/master/LICENSE
@@ -1389,7 +1443,7 @@ exports.install = function (handle) {
     element.data = (called = ++called % 2);
   };
 };
-},{}],23:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 var global=typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {};'use strict';
 // The test against `importScripts` prevents this implementation from being installed inside a web worker,
 // where `global.postMessage` means something completely different and can't be used for this purpose.
@@ -1398,7 +1452,11 @@ exports.test = function () {
   if (!global.postMessage || global.importScripts) {
     return false;
   }
-
+  if (global.setImmediate) {
+    // we can only get here in IE10
+    // which doesn't handel postMessage well
+    return false;
+  }
   var postMessageIsAsynchronous = true;
   var oldOnMessage = global.onmessage;
   global.onmessage = function () {
@@ -1426,7 +1484,7 @@ exports.install = function (func) {
     global.postMessage(codeWord, '*');
   };
 };
-},{}],24:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 var global=typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {};'use strict';
 
 exports.test = function () {
@@ -1451,7 +1509,7 @@ exports.install = function (handle) {
     return handle;
   };
 };
-},{}],25:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 'use strict';
 exports.test = function () {
   return true;
@@ -1462,9 +1520,9 @@ exports.install = function (t) {
     setTimeout(t, 0);
   };
 };
-},{}],26:[function(require,module,exports){
+},{}],30:[function(require,module,exports){
 !function(a,b){"function"==typeof define&&define.amd?define(b):"object"==typeof exports?module.exports=b():a.md5=b()}(this,function(){function a(a,b){var g=a[0],h=a[1],i=a[2],j=a[3];g=c(g,h,i,j,b[0],7,-680876936),j=c(j,g,h,i,b[1],12,-389564586),i=c(i,j,g,h,b[2],17,606105819),h=c(h,i,j,g,b[3],22,-1044525330),g=c(g,h,i,j,b[4],7,-176418897),j=c(j,g,h,i,b[5],12,1200080426),i=c(i,j,g,h,b[6],17,-1473231341),h=c(h,i,j,g,b[7],22,-45705983),g=c(g,h,i,j,b[8],7,1770035416),j=c(j,g,h,i,b[9],12,-1958414417),i=c(i,j,g,h,b[10],17,-42063),h=c(h,i,j,g,b[11],22,-1990404162),g=c(g,h,i,j,b[12],7,1804603682),j=c(j,g,h,i,b[13],12,-40341101),i=c(i,j,g,h,b[14],17,-1502002290),h=c(h,i,j,g,b[15],22,1236535329),g=d(g,h,i,j,b[1],5,-165796510),j=d(j,g,h,i,b[6],9,-1069501632),i=d(i,j,g,h,b[11],14,643717713),h=d(h,i,j,g,b[0],20,-373897302),g=d(g,h,i,j,b[5],5,-701558691),j=d(j,g,h,i,b[10],9,38016083),i=d(i,j,g,h,b[15],14,-660478335),h=d(h,i,j,g,b[4],20,-405537848),g=d(g,h,i,j,b[9],5,568446438),j=d(j,g,h,i,b[14],9,-1019803690),i=d(i,j,g,h,b[3],14,-187363961),h=d(h,i,j,g,b[8],20,1163531501),g=d(g,h,i,j,b[13],5,-1444681467),j=d(j,g,h,i,b[2],9,-51403784),i=d(i,j,g,h,b[7],14,1735328473),h=d(h,i,j,g,b[12],20,-1926607734),g=e(g,h,i,j,b[5],4,-378558),j=e(j,g,h,i,b[8],11,-2022574463),i=e(i,j,g,h,b[11],16,1839030562),h=e(h,i,j,g,b[14],23,-35309556),g=e(g,h,i,j,b[1],4,-1530992060),j=e(j,g,h,i,b[4],11,1272893353),i=e(i,j,g,h,b[7],16,-155497632),h=e(h,i,j,g,b[10],23,-1094730640),g=e(g,h,i,j,b[13],4,681279174),j=e(j,g,h,i,b[0],11,-358537222),i=e(i,j,g,h,b[3],16,-722521979),h=e(h,i,j,g,b[6],23,76029189),g=e(g,h,i,j,b[9],4,-640364487),j=e(j,g,h,i,b[12],11,-421815835),i=e(i,j,g,h,b[15],16,530742520),h=e(h,i,j,g,b[2],23,-995338651),g=f(g,h,i,j,b[0],6,-198630844),j=f(j,g,h,i,b[7],10,1126891415),i=f(i,j,g,h,b[14],15,-1416354905),h=f(h,i,j,g,b[5],21,-57434055),g=f(g,h,i,j,b[12],6,1700485571),j=f(j,g,h,i,b[3],10,-1894986606),i=f(i,j,g,h,b[10],15,-1051523),h=f(h,i,j,g,b[1],21,-2054922799),g=f(g,h,i,j,b[8],6,1873313359),j=f(j,g,h,i,b[15],10,-30611744),i=f(i,j,g,h,b[6],15,-1560198380),h=f(h,i,j,g,b[13],21,1309151649),g=f(g,h,i,j,b[4],6,-145523070),j=f(j,g,h,i,b[11],10,-1120210379),i=f(i,j,g,h,b[2],15,718787259),h=f(h,i,j,g,b[9],21,-343485551),a[0]=l(g,a[0]),a[1]=l(h,a[1]),a[2]=l(i,a[2]),a[3]=l(j,a[3])}function b(a,b,c,d,e,f){return b=l(l(b,a),l(d,f)),l(b<<e|b>>>32-e,c)}function c(a,c,d,e,f,g,h){return b(c&d|~c&e,a,c,f,g,h)}function d(a,c,d,e,f,g,h){return b(c&e|d&~e,a,c,f,g,h)}function e(a,c,d,e,f,g,h){return b(c^d^e,a,c,f,g,h)}function f(a,c,d,e,f,g,h){return b(d^(c|~e),a,c,f,g,h)}function g(b){txt="";var c,d=b.length,e=[1732584193,-271733879,-1732584194,271733878];for(c=64;c<=b.length;c+=64)a(e,h(b.substring(c-64,c)));b=b.substring(c-64);var f=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];for(c=0;c<b.length;c++)f[c>>2]|=b.charCodeAt(c)<<(c%4<<3);if(f[c>>2]|=128<<(c%4<<3),c>55)for(a(e,f),c=0;16>c;c++)f[c]=0;return f[14]=8*d,a(e,f),e}function h(a){var b,c=[];for(b=0;64>b;b+=4)c[b>>2]=a.charCodeAt(b)+(a.charCodeAt(b+1)<<8)+(a.charCodeAt(b+2)<<16)+(a.charCodeAt(b+3)<<24);return c}function i(a){for(var b="",c=0;4>c;c++)b+=m[a>>8*c+4&15]+m[a>>8*c&15];return b}function j(a){for(var b=0;b<a.length;b++)a[b]=i(a[b]);return a.join("")}function k(a){return j(g(a))}function l(a,b){return a+b&4294967295}function l(a,b){var c=(65535&a)+(65535&b),d=(a>>16)+(b>>16)+(c>>16);return d<<16|65535&c}var m="0123456789abcdef".split("");return"5d41402abc4b2a76b9719d911017c592"!=k("hello"),k});
-},{}],27:[function(require,module,exports){
+},{}],31:[function(require,module,exports){
 'use strict';
 
 var MIN_MAGNITUDE = -324; // verified by -Number.MIN_VALUE
@@ -1687,7 +1745,7 @@ function numToIndexableString(num) {
   return result;
 }
 
-},{"./utils":28}],28:[function(require,module,exports){
+},{"./utils":32}],32:[function(require,module,exports){
 'use strict';
 
 function pad(str, padWith, upToLength) {
@@ -1758,7 +1816,7 @@ exports.intToDecimalForm = function (int) {
 
   return result;
 };
-},{}],29:[function(require,module,exports){
+},{}],33:[function(require,module,exports){
 'use strict';
 /*
  * Simple task queue to sequentialize actions. Assumes callbacks will eventually fire (once).
@@ -1770,7 +1828,7 @@ function TaskQueue() {
   this.promise = new Promise(function (fulfill) {fulfill(); });
 }
 TaskQueue.prototype.add = function (promiseFactory) {
-  this.promise = this.promise.then(null, function () {
+  this.promise = this.promise.catch(function () {
     // just recover
   }).then(function () {
     return promiseFactory();
@@ -1783,7 +1841,7 @@ TaskQueue.prototype.finish = function () {
 
 module.exports = TaskQueue;
 
-},{"./utils":31}],30:[function(require,module,exports){
+},{"./utils":35}],34:[function(require,module,exports){
 'use strict';
 var Promise = require('./utils').Promise;
 
@@ -1816,7 +1874,7 @@ function upsert(db, docId, diffFun) {
 }
 
 function tryAndPut(db, doc, diffFun) {
-  return db.put(doc).then(null, function (err) {
+  return db.put(doc).catch(function (err) {
     if (err.name !== 'conflict') {
       throw err;
     }
@@ -1826,7 +1884,7 @@ function tryAndPut(db, doc, diffFun) {
 
 module.exports = upsert;
 
-},{"./utils":31}],31:[function(require,module,exports){
+},{"./utils":35}],35:[function(require,module,exports){
 var process=require("__browserify_process"),global=typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {};'use strict';
 /* istanbul ignore if */
 if (typeof global.Promise === 'function') {
@@ -1911,7 +1969,7 @@ exports.MD5 = function (string) {
     return md5(string);
   }
 };
-},{"__browserify_process":6,"argsarray":4,"crypto":5,"extend":7,"inherits":8,"lie":12,"md5-jkmyers":26}]},{},[3])
+},{"__browserify_process":6,"argsarray":4,"crypto":5,"extend":7,"inherits":8,"lie":13,"md5-jkmyers":30}]},{},[3])
 (3)
 });
 ;
