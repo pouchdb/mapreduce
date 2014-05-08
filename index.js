@@ -575,7 +575,7 @@ var localViewCleanup = utils.sequentialize(mainQueue, function (db) {
   return db.get('_local/mrviews').then(function (metaDoc) {
     var docsToViews = {};
     Object.keys(metaDoc.views).forEach(function (fullViewName) {
-      var parts = fullViewName.split('/');
+      var parts = parseViewName(fullViewName);
       var designDocName = '_design/' + parts[0];
       var viewName = parts[1];
       docsToViews[designDocName] = docsToViews[designDocName] || {};
@@ -588,8 +588,16 @@ var localViewCleanup = utils.sequentialize(mainQueue, function (db) {
     return db.allDocs(opts).then(function (res) {
       var viewsToStatus = {};
       res.rows.forEach(function (row) {
+        var ddocName = row.key.substring(8);
         Object.keys(docsToViews[row.key]).forEach(function (viewName) {
-          var viewDBNames = Object.keys(metaDoc.views[row.key.substring(8) + '/' + viewName]);
+          var fullViewName = ddocName + '/' + viewName;
+          /* istanbul ignore if */
+          if (!metaDoc.views[fullViewName]) {
+            // new format, without slashes, to support PouchDB 2.2.0
+            // migration test in pouchdb's browser.migration.js verifies this
+            fullViewName = viewName;
+          }
+          var viewDBNames = Object.keys(metaDoc.views[fullViewName]);
           // design doc deleted, or view function nonexistent
           var statusIsGood = row.doc && row.doc.views && row.doc.views[viewName];
           viewDBNames.forEach(function (viewDBName) {
