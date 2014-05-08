@@ -859,6 +859,93 @@ function tests(dbName, dbType, viewType) {
     });
 
     if (viewType === 'persisted') {
+
+      it('Returns ok for viewCleanup on empty db', function () {
+        return new Pouch(dbName).then(function (db) {
+          return db.viewCleanup().then(function (res) {
+            res.ok.should.equal(true);
+          });
+        });
+      });
+
+      it('Returns ok for viewCleanup after modifying view', function () {
+        return new Pouch(dbName).then(function (db) {
+          var ddoc = {
+            _id: '_design/myview',
+            views: {
+              myview: {
+                map: function (doc) {
+                  emit(doc.firstName);
+                }.toString()
+              }
+            }
+          };
+          var doc = {
+            _id: 'foo',
+            firstName: 'Foobar',
+            lastName: 'Bazman'
+          };
+          return db.bulkDocs({docs: [ddoc, doc]}).then(function (info) {
+            ddoc._rev = info[0].rev;
+            return db.query('myview');
+          }).then(function (res) {
+            res.rows.should.deep.equal([
+              {id: 'foo', key: 'Foobar', value: null}
+            ]);
+            ddoc.views.myview.map = function (doc) {
+              emit(doc.lastName);
+            }.toString();
+            return db.put(ddoc);
+          }).then(function () {
+            return db.query('myview');
+          }).then(function (res) {
+            res.rows.should.deep.equal([
+              {id: 'foo', key: 'Bazman', value: null}
+            ]);
+            return db.viewCleanup();
+          });
+        });
+      });
+
+      it('Returns ok for viewCleanup after modifying view, old format', function () {
+        return new Pouch(dbName).then(function (db) {
+          var ddoc = {
+            _id: '_design/myddoc',
+            views: {
+              myview: {
+                map: function (doc) {
+                  emit(doc.firstName);
+                }.toString()
+              }
+            }
+          };
+          var doc = {
+            _id: 'foo',
+            firstName: 'Foobar',
+            lastName: 'Bazman'
+          };
+          return db.bulkDocs({docs: [ddoc, doc]}).then(function (info) {
+            ddoc._rev = info[0].rev;
+            return db.query('myddoc/myview');
+          }).then(function (res) {
+            res.rows.should.deep.equal([
+              {id: 'foo', key: 'Foobar', value: null}
+            ]);
+            ddoc.views.myview.map = function (doc) {
+              emit(doc.lastName);
+            }.toString();
+            return db.put(ddoc);
+          }).then(function () {
+            return db.query('myddoc/myview');
+          }).then(function (res) {
+            res.rows.should.deep.equal([
+              {id: 'foo', key: 'Bazman', value: null}
+            ]);
+            return db.viewCleanup();
+          });
+        });
+      });
+
       it("Query non existing view returns error", function () {
         return new Pouch(dbName).then(function (db) {
           var doc = {
