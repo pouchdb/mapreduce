@@ -34,7 +34,8 @@
     "inherits": "~2.0.1",
     "extend": "^1.2.1",
     "argsarray": "0.0.1",
-    "md5-jkmyers": "0.0.1"
+    "md5-jkmyers": "0.0.1",
+    "es3ify": "^0.1.3"
   },
   "devDependencies": {
     "bluebird": "^1.0.7",
@@ -55,5 +56,10 @@
   },
   "browser": {
     "crypto": false
+  },
+  "browserify": {
+    "transform": [
+      "./node_modules/es3ify"
+    ]
   }
 }
