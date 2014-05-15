@@ -32,7 +32,11 @@ module.exports = function (opts) {
     // (e.g. when the _design doc is deleted, remove all associated view data)
     function diffFunction(doc) {
       doc.views = doc.views || {};
-      var depDbs = doc.views[viewName] = doc.views[viewName] || {};
+      var fullViewName = viewName;
+      if (fullViewName.indexOf('/') === -1) {
+        fullViewName = viewName + '/' + viewName;
+      }
+      var depDbs = doc.views[fullViewName] = doc.views[fullViewName] || {};
       /* istanbul ignore if */
       if (depDbs[depDbName]) {
         return; // no update necessary
@@ -52,7 +56,7 @@ module.exports = function (opts) {
           mapFun: mapFun,
           reduceFun: reduceFun
         };
-        return view.db.get('_local/lastSeq').catch(function (err) {
+        return view.db.get('_local/lastSeq')["catch"](function (err) {
           /* istanbul ignore if */
           if (err.name !== 'not_found') {
             throw err;
@@ -340,8 +344,8 @@ function defaultsTo(value) {
 // be able to find later using the metaDoc.
 function getDocsToPersist(docId, view, docIdsToEmits) {
   var metaDocId = '_local/doc_' + docId;
-  return view.db.get(metaDocId)
-    .catch(defaultsTo({_id: metaDocId, keys: []}))
+  return view.db.get(metaDocId)[
+    "catch"](defaultsTo({_id: metaDocId, keys: []}))
     .then(function (metaDoc) {
       return view.db.allDocs({
         keys: metaDoc.keys,
@@ -385,8 +389,8 @@ function getDocsToPersist(docId, view, docIdsToEmits) {
 // for the given batch of documents from the source database
 function saveKeyValues(view, docIdsToEmits, seq) {
   var seqDocId = '_local/lastSeq';
-  return view.db.get(seqDocId)
-  .catch(defaultsTo({_id: seqDocId, seq: 0}))
+  return view.db.get(seqDocId)[
+  "catch"](defaultsTo({_id: seqDocId, seq: 0}))
   .then(function (lastSeqDoc) {
     var docIds = Object.keys(docIdsToEmits);
     return Promise.all(docIds.map(function (docId) {
@@ -659,7 +663,7 @@ var localViewCleanup = utils.sequentialize(mainQueue, function (db) {
   return db.get('_local/mrviews').then(function (metaDoc) {
     var docsToViews = {};
     Object.keys(metaDoc.views).forEach(function (fullViewName) {
-      var parts = fullViewName.split('/');
+      var parts = parseViewName(fullViewName);
       var designDocName = '_design/' + parts[0];
       var viewName = parts[1];
       docsToViews[designDocName] = docsToViews[designDocName] || {};
@@ -672,8 +676,16 @@ var localViewCleanup = utils.sequentialize(mainQueue, function (db) {
     return db.allDocs(opts).then(function (res) {
       var viewsToStatus = {};
       res.rows.forEach(function (row) {
+        var ddocName = row.key.substring(8);
         Object.keys(docsToViews[row.key]).forEach(function (viewName) {
-          var viewDBNames = Object.keys(metaDoc.views[row.key.substring(8) + '/' + viewName]);
+          var fullViewName = ddocName + '/' + viewName;
+          /* istanbul ignore if */
+          if (!metaDoc.views[fullViewName]) {
+            // new format, without slashes, to support PouchDB 2.2.0
+            // migration test in pouchdb's browser.migration.js verifies this
+            fullViewName = viewName;
+          }
+          var viewDBNames = Object.keys(metaDoc.views[fullViewName]);
           // design doc deleted, or view function nonexistent
           var statusIsGood = row.doc && row.doc.views && row.doc.views[viewName];
           viewDBNames.forEach(function (viewDBName) {
@@ -1828,7 +1840,7 @@ function TaskQueue() {
   this.promise = new Promise(function (fulfill) {fulfill(); });
 }
 TaskQueue.prototype.add = function (promiseFactory) {
-  this.promise = this.promise.catch(function () {
+  this.promise = this.promise["catch"](function () {
     // just recover
   }).then(function () {
     return promiseFactory();
@@ -1874,7 +1886,7 @@ function upsert(db, docId, diffFun) {
 }
 
 function tryAndPut(db, doc, diffFun) {
-  return db.put(doc).catch(function (err) {
+  return db.put(doc)["catch"](function (err) {
     if (err.name !== 'conflict') {
       throw err;
     }
