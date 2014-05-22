@@ -51,9 +51,6 @@
     "watchify": "~0.4.1",
     "istanbul": "^0.2.7"
   },
-  "peerDependencies": {
-    "pouchdb": "^2.1.0"
-  },
   "browser": {
     "crypto": false
   },
