@@ -90,54 +90,6 @@ describe('utils', function () {
     }).should.be.rejected;
   });
 });
-describe('put view', function () {
-  it('should work with 3 arguments', function (done) {
-    Mapreduce.putView.call({
-      put: function (doc, callback) {
-        doc.should.deep.equal({
-          _id: '_design/foo',
-          views: { 
-            bar: {
-              map: 'function () {}' 
-            }
-          }
-        });
-        callback();
-      }
-    }, 'foo/bar', function () {}, done);
-  });
-  it('should work with 4 arguments opts', function (done) {
-    Mapreduce.putView.call({
-      put: function (doc, callback) {
-        doc.should.deep.equal({
-          _id: '_design/foo',
-          views: { 
-            bar: {
-              map: 'function () {}' 
-            }
-          }
-        });
-        callback();
-      }
-    }, 'foo/bar', function () {}, {}, done);
-  });
-  it('should work with 4 arguments rev', function (done) {
-    Mapreduce.putView.call({
-      put: function (doc, callback) {
-        doc.should.deep.equal({
-          _id: '_design/foo',
-          views: { 
-            bar: {
-              map: 'function () {}' 
-            }
-          },
-          _rev: '1-foo'
-        });
-        callback();
-      }
-    }, 'foo/bar', function () {}, '1-foo', done);
-  });
-});
 function tests(dbName, dbType, viewType) {
 
   var createView;
