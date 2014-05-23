@@ -1,7 +1,6 @@
 'use strict';
 
 var pouchCollate = require('pouchdb-collate');
-var TaskQueue = require('./taskqueue');
 var collate = pouchCollate.collate;
 var toIndexableString = pouchCollate.toIndexableString;
 var normalizeKey = pouchCollate.normalizeKey;
@@ -16,16 +15,13 @@ if ((typeof console !== 'undefined') && (typeof console.log === 'function')) {
 }
 var utils = require('./utils');
 var Promise = utils.Promise;
-var mainQueue = new TaskQueue();
-var tempViewQueue = new TaskQueue();
 var CHANGES_BATCH_SIZE = 50;
-
-function parseViewName(name) {
-  // can be either 'ddocname/viewname' or just 'viewname'
-  // (where the ddoc name is the same)
-  return name.indexOf('/') === -1 ? [name, name] : name.split('/');
-}
-
+var persistance = require('pouchdb-persistence');
+var mainQueue = persistance.mainQueue;
+var TaskQueue = mainQueue.TaskQueue;
+var tempViewQueue = new TaskQueue();
+exports.viewCleanup = persistance.viewCleanup;
+exports.putView = persistance.putView;
 function tryCode(db, fun, args) {
   // emit an event if there was an error thrown by a map/reduce function.
   // putting try/catches in a single function also avoids deoptimizations.
@@ -564,67 +560,9 @@ var queryView = utils.sequentialize(mainQueue, function (view, opts) {
   }
 });
 
-function httpViewCleanup(db) {
-  return db.request({
-    method: 'POST',
-    url: '_view_cleanup'
-  });
-}
 
-var localViewCleanup = utils.sequentialize(mainQueue, function (db) {
-  return db.get('_local/mrviews').then(function (metaDoc) {
-    var docsToViews = {};
-    Object.keys(metaDoc.views).forEach(function (fullViewName) {
-      var parts = parseViewName(fullViewName);
-      var designDocName = '_design/' + parts[0];
-      var viewName = parts[1];
-      docsToViews[designDocName] = docsToViews[designDocName] || {};
-      docsToViews[designDocName][viewName] = true;
-    });
-    var opts = {
-      keys : Object.keys(docsToViews),
-      include_docs : true
-    };
-    return db.allDocs(opts).then(function (res) {
-      var viewsToStatus = {};
-      res.rows.forEach(function (row) {
-        var ddocName = row.key.substring(8);
-        Object.keys(docsToViews[row.key]).forEach(function (viewName) {
-          var fullViewName = ddocName + '/' + viewName;
-          /* istanbul ignore if */
-          if (!metaDoc.views[fullViewName]) {
-            // new format, without slashes, to support PouchDB 2.2.0
-            // migration test in pouchdb's browser.migration.js verifies this
-            fullViewName = viewName;
-          }
-          var viewDBNames = Object.keys(metaDoc.views[fullViewName]);
-          // design doc deleted, or view function nonexistent
-          var statusIsGood = row.doc && row.doc.views && row.doc.views[viewName];
-          viewDBNames.forEach(function (viewDBName) {
-            viewsToStatus[viewDBName] = viewsToStatus[viewDBName] || statusIsGood;
-          });
-        });
-      });
-      var dbsToDelete = Object.keys(viewsToStatus).filter(function (viewDBName) {
-        return !viewsToStatus[viewDBName];
-      });
-      var destroyPromises = dbsToDelete.map(function (viewDBName) {
-        return db.constructor.destroy(viewDBName, {adapter : db.adapter});
-      });
-      return Promise.all(destroyPromises).then(function () {
-        return {ok: true};
-      });
-    });
-  }, defaultsTo({ok: true}));
-});
 
-exports.viewCleanup = utils.callbackify(function () {
-  var db = this;
-  if (db.type() === 'http') {
-    return httpViewCleanup(db);
-  }
-  return localViewCleanup(db);
-});
+
 
 function queryPromised(db, fun, opts) {
   if (db.type() === 'http') {
@@ -712,60 +650,11 @@ exports.query = function (fun, opts, callback) {
   return promise;
 };
 
-exports.putView = function (name, fun, rev, opts, callback) {
-  if (typeof rev === 'object') {
-    callback = opts;
-    opts = rev;
-    rev = null;
-  } else if (typeof rev === 'function') {
-    callback = rev;
-    rev = opts = null;
-  } else if (typeof opts === 'function') {
-    callback = opts;
-    opts = null;
-  }
-  opts = utils.extend({}, opts || {});
-
-  if (typeof fun === 'function' || typeof fun === 'string') {
-    fun = {map : fun};
-  }
-
-  var error;
-
-  if (typeof name !== 'string') {
-    error = new Error('you must supply a design doc/view name');
-    error.name = 'putview_error';
-    error.status = 400;
-    return utils.promisedCallback(Promise.reject(error), callback);
-  } else if (!fun || ['function', 'string'].indexOf(typeof fun.map) === -1) {
-    error = new Error('you must supply a map function');
-    error.name = 'putview_error';
-    error.status = 400;
-    return utils.promisedCallback(Promise.reject(error), callback);
-  }
-
-  if (typeof fun.map === 'function') {
-    fun.map = fun.map.toString();
-  }
-  if (typeof fun.reduce === 'function') {
-    fun.reduce = fun.reduce.toString();
-  }
-
-  var parts = name.split('/');
-  var designDocName = '_design/' + parts[0];
-  var viewName = parts[1];
-
-  var doc = {
-    _id : designDocName,
-    views : {}
-  };
-  doc.views[viewName] = fun;
-  if (rev) {
-    doc._rev = rev;
-  }
-
-  return this.put(doc, callback);
-};
+function parseViewName(name) {
+  // can be either 'ddocname/viewname' or just 'viewname'
+  // (where the ddoc name is the same)
+  return name.indexOf('/') === -1 ? [name, name] : name.split('/');
+}
 
 function QueryParseError(message) {
   this.status = 400;
