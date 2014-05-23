@@ -21,9 +21,13 @@ var argsarray = require('argsarray');
 exports.promisedCallback = function (promise, callback) {
   if (callback) {
     promise.then(function (res) {
-      callback(null, res);
+      process.nextTick(function () {
+        callback(null, res);
+      });
     }, function (reason) {
-      callback(reason);
+      process.nextTick(function () {
+        callback(reason);
+      });
     });
   }
   return promise;
