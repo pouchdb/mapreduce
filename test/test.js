@@ -2607,6 +2607,20 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
+    it("should accept trailing ';' in a map definition (issue 178)", function () {
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map: "function(doc){};\n",
+        }).then(function (queryFun) {
+          return db.query(queryFun);
+        }).should.become({
+          offset: 0,
+          rows: [],
+          total_rows: 0
+        });
+      });
+    });
+
     if (viewType === 'persisted') {
 
       it('should delete duplicate indexes', function () {
