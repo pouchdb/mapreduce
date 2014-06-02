@@ -663,8 +663,9 @@ function queryPersistent(db, fun, opts) {
       });
     }
   }
-
   if (opts.saveAs) {
+    console.log('hello');
+    console.log(fun);
     var autoOptions = {
       db: db,
       saveAs: opts.saveAs,
@@ -706,7 +707,7 @@ function queryPromised(db, fun, opts) {
     return httpQuery(db, fun, opts);
   }
 
-  if (typeof fun !== 'string') {
+  if (typeof fun !== 'string' && !opts.saveAs) {
     // temp_view
     return queryTemp(db, fun, opts);
   } else {
@@ -724,6 +725,10 @@ exports.query = function (fun, opts, callback) {
 
   if (typeof fun === 'function') {
     fun = {map : fun};
+  }
+  if (fun.saveAs) {
+    opts.saveAs = fun.saveAs;
+    delete fun.saveAs;
   }
 
   var db = this;
