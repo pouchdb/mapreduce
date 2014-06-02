@@ -123,6 +123,59 @@ var builtInReduce = {
   }
 };
 
+function createNativeFunction(mapFun) {
+  var key;
+  var value;
+  function emit(thisKey, thisValue) {
+    key = thisKey;
+    value = thisValue;
+  }
+
+  mapFun = evalFunc(mapFun.toString(), emit, sum, log, Array.isArray, JSON.parse);
+
+  return function (currentDoc) {
+    mapFun(currentDoc);
+    return {
+      key : toIndexableString([key, currentDoc._id]),
+      value : JSON.stringify({
+        key: key,
+        value: value,
+        id: currentDoc._id
+      })
+    };
+  };
+}
+
+function transformOpts(opts) {
+  // TODO: handle keys
+  opts = utils.extend(true, {}, opts);
+  if (typeof opts.startkey !== 'undefined') {
+    opts.startkey = opts.descending ?
+      toIndexableString([opts.startkey, {}]) :
+      toIndexableString([opts.startkey]);
+  }
+  if (typeof opts.endkey !== 'undefined') {
+    var inclusiveEnd = opts.inclusive_end !== false;
+    if (opts.descending) {
+      inclusiveEnd = !inclusiveEnd;
+    }
+
+    opts.endkey = toIndexableString(inclusiveEnd ? [opts.endkey, {}] : [opts.endkey]);
+  }
+  if (typeof opts.key !== 'undefined') {
+    var keyStart = toIndexableString([opts.key]);
+    var keyEnd = toIndexableString([opts.key, {}]);
+    if (opts.descending) {
+      opts.endkey = keyStart;
+      opts.startkey = keyEnd;
+    } else {
+      opts.startkey = keyStart;
+      opts.endkey = keyEnd;
+    }
+  }
+  return opts;
+}
+
 function addHttpParam(paramName, opts, params, asJson) {
   // add an http param from opts to params, optionally json-encoded
   var val = opts[paramName];
@@ -670,6 +723,14 @@ function queryPromised(db, fun, opts) {
         throw error;
       }
       checkQueryParseError(opts, fun);
+
+      if (doc.native) {
+
+        var nativeFun = createNativeFunction(fun.map);
+        opts = transformOpts(opts);
+        return db.nativeQuery(fullViewName, nativeFun, opts, opts.complete);
+      }
+
 
       var createViewOpts = {
         db : db,
