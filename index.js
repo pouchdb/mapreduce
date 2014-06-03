@@ -698,7 +698,7 @@ exports.query = function (fun, opts, callback) {
     callback = opts;
     opts = {};
   }
-  opts = utils.extend({}, opts);
+  opts = utils.extend(true, {}, opts);
 
   if (typeof fun === 'function') {
     fun = {map : fun};

@@ -33,7 +33,7 @@
     "lie": "^2.6.0",
     "pouchdb-collate": "~1.1.0",
     "inherits": "~2.0.1",
-    "extend": "^1.2.1",
+    "pouchdb-extend": "^0.1.0",
     "argsarray": "0.0.1",
     "md5-jkmyers": "0.0.1",
     "es3ify": "^0.1.3"
