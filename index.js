@@ -336,11 +336,11 @@ var updateView = utils.sequentialize(mainQueue, function (view) {
   var doc;
 
   function emit(key, value) {
-    mapResults.push({
-      id  : doc._id,
-      key : normalizeKey(key),
-      value : normalizeKey(value)
-    });
+    var output = { id: doc._id, key: normalizeKey(key) };
+    if (typeof value !== 'undefined' && value !== null) {
+      output.value = normalizeKey(value);
+    }
+    mapResults.push(output);
   }
 
   var mapFun;
@@ -397,10 +397,16 @@ var updateView = utils.sequentialize(mainQueue, function (view) {
             mapResults.sort(sortByKeyThenValue);
 
             var indexableKeysToKeyValues = {};
+            var lastKey;
             for (var j = 0, jl = mapResults.length; j < jl; j++) {
               var obj = mapResults[j];
-              var indexableKey = toIndexableString([obj.key, obj.id, j]);
+              var complexKey = [obj.key, obj.id];
+              if (obj.key === lastKey) {
+                complexKey.push(j); // dup key+id, so make it unique
+              }
+              var indexableKey = toIndexableString(complexKey);
               indexableKeysToKeyValues[indexableKey] = obj;
+              lastKey = obj.key;
             }
             docIdsToEmits[change.doc._id] = indexableKeysToKeyValues;
           }
@@ -488,6 +494,12 @@ var queryView = utils.sequentialize(mainQueue, function (view, opts) {
   }
 
   function onMapResultsReady(results) {
+    results.forEach(function (result) {
+      // we don't persist the value if it's null, so set it now
+      if (!('value' in result)) {
+        result.value = null;
+      }
+    });
     var res;
     if (shouldReduce) {
       res = reduceView(view, results, opts);
