@@ -626,35 +626,59 @@ exports.viewCleanup = utils.callbackify(function () {
   return localViewCleanup(db);
 });
 
-function queryPromised(db, fun, opts) {
-  if (db.type() === 'http') {
-    return httpQuery(db, fun, opts);
-  }
+function queryTemp(db, fun, opts) {
+  checkQueryParseError(opts, fun);
 
-  if (typeof fun !== 'string') {
-    // temp_view
-    checkQueryParseError(opts, fun);
-
-    var createViewOpts = {
-      db : db,
-      viewName : 'temp_view/temp_view',
-      map : fun.map,
-      reduce : fun.reduce,
-      temporary : true
-    };
-    tempViewQueue.add(function () {
-      return createView(createViewOpts).then(function (view) {
-        function cleanup() {
-          return view.db.destroy();
-        }
-        return utils.fin(updateView(view).then(function () {
-          return queryView(view, opts);
-        }), cleanup);
-      });
+  var createViewOpts = {
+    db : db,
+    viewName : 'temp_view/temp_view',
+    map : fun.map,
+    reduce : fun.reduce,
+    temporary : true
+  };
+  tempViewQueue.add(function () {
+    return createView(createViewOpts).then(function (view) {
+      function cleanup() {
+        return view.db.destroy();
+      }
+      return utils.fin(updateView(view).then(function () {
+        return queryView(view, opts);
+      }), cleanup);
     });
-    return tempViewQueue.finish();
+  });
+  return tempViewQueue.finish();
+}
+
+function queryPersistent(db, fun, opts) {
+
+  function onViewReady(view) {
+    if (opts.stale === 'ok' || opts.stale === 'update_after') {
+      if (opts.stale === 'update_after') {
+        updateView(view);
+      }
+      return queryView(view, opts);
+    } else { // stale not ok
+      return updateView(view).then(function () {
+        return queryView(view, opts);
+      });
+    }
+  }
+  if (opts.saveAs) {
+
+    var autoOptions = {
+      db: db,
+      saveAs: opts.saveAs,
+      map: fun.map,
+      reduce: fun.reduce
+    };
+    if (opts.destroy) {
+      return createView(autoOptions).then(function (view) {
+        return view.db.destroy();
+      });
+    }
+    checkQueryParseError(opts, fun);
+    return createView(autoOptions).then(onViewReady);
   } else {
-    // persistent view
     var fullViewName = fun;
     var parts = parseViewName(fullViewName);
     var designDocName = parts[0];
@@ -677,19 +701,22 @@ function queryPromised(db, fun, opts) {
         map : fun.map,
         reduce : fun.reduce
       };
-      return createView(createViewOpts).then(function (view) {
-        if (opts.stale === 'ok' || opts.stale === 'update_after') {
-          if (opts.stale === 'update_after') {
-            updateView(view);
-          }
-          return queryView(view, opts);
-        } else { // stale not ok
-          return updateView(view).then(function () {
-            return queryView(view, opts);
-          });
-        }
-      });
+      return createView(createViewOpts).then(onViewReady);
     });
+  }
+}
+
+function queryPromised(db, fun, opts) {
+  if (db.type() === 'http') {
+    return httpQuery(db, fun, opts);
+  }
+
+  if (typeof fun !== 'string' && !opts.saveAs) {
+    // temp_view
+    return queryTemp(db, fun, opts);
+  } else {
+    // persistent view
+    return queryPersistent(db, fun, opts);
   }
 }
 
@@ -702,6 +729,10 @@ exports.query = function (fun, opts, callback) {
 
   if (typeof fun === 'function') {
     fun = {map : fun};
+  }
+  if (fun.saveAs) {
+    opts.saveAs = fun.saveAs;
+    delete fun.saveAs;
   }
 
   var db = this;
