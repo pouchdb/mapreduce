@@ -16,6 +16,13 @@ if ((typeof console !== 'undefined') && (typeof console.log === 'function')) {
 }
 var utils = require('./utils');
 var Promise = utils.Promise;
+var nextTick;
+/* istanbul ignore else */
+if (global.setImmediate) {
+  nextTick = global.setImmediate;
+} else {
+  nextTick = process.nextTick;
+}
 var mainQueue = new TaskQueue();
 var tempViewQueue = new TaskQueue();
 var CHANGES_BATCH_SIZE = 50;
@@ -680,7 +687,9 @@ function queryPromised(db, fun, opts) {
       return createView(createViewOpts).then(function (view) {
         if (opts.stale === 'ok' || opts.stale === 'update_after') {
           if (opts.stale === 'update_after') {
-            updateView(view);
+            nextTick(function () {
+              updateView(view);
+            });
           }
           return queryView(view, opts);
         } else { // stale not ok
