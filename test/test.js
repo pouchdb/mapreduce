@@ -2273,6 +2273,14 @@ function tests(dbName, dbType, viewType) {
         });
       });
     });
+
+    it('should allow us to set the batch size', function () {
+      return new Pouch(dbName).then(function (db) {
+        db.setQueryBatchSize(300);
+        return;
+      });
+    });
+
     it('should properly query custom reduce functions', function () {
       this.timeout(10000);
       return new Pouch(dbName).then(function (db) {

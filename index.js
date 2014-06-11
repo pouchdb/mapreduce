@@ -18,7 +18,7 @@ var utils = require('./utils');
 var Promise = utils.Promise;
 var mainQueue = new TaskQueue();
 var tempViewQueue = new TaskQueue();
-var CHANGES_BATCH_SIZE = 50;
+var batchSize = 500;
 
 function parseViewName(name) {
   // can be either 'ddocname/viewname' or just 'viewname'
@@ -372,7 +372,7 @@ var updateView = utils.sequentialize(mainQueue, function (view) {
         conflicts: true,
         include_docs: true,
         since : currentSeq,
-        limit : CHANGES_BATCH_SIZE
+        limit : batchSize
       }).on('complete', function (response) {
         var results = response.results;
         if (!results.length) {
@@ -401,7 +401,7 @@ var updateView = utils.sequentialize(mainQueue, function (view) {
           currentSeq = change.seq;
         }
         queue.add(processChange(docIdsToEmits, currentSeq));
-        if (results.length < CHANGES_BATCH_SIZE) {
+        if (results.length < batchSize) {
           return complete();
         }
         return processNextBatch();
@@ -710,6 +710,10 @@ exports.query = function (fun, opts, callback) {
   });
   utils.promisedCallback(promise, callback);
   return promise;
+};
+
+exports.setQueryBatchSize = function (newBatchSize) {
+  batchSize = newBatchSize;
 };
 
 function QueryParseError(message) {
