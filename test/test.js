@@ -22,9 +22,27 @@ if (process.browser) {
 
 dbs.split(',').forEach(function (db) {
   var dbType = /^http/.test(db) ? 'http' : 'local';
-  var viewTypes = ['persisted', 'temp'];
+  var viewTypes = [
+    {
+      persisted: true,
+      auto: false
+    },
+    {
+      persisted: false
+    }
+  ];
+  if (dbType === 'local') {
+    // doesn't make sense on http
+    viewTypes.push({
+      persisted: true,
+      auto: true
+    });
+  }
   viewTypes.forEach(function (viewType) {
-    describe(dbType + ' with ' + viewType + ' views:', function () {
+
+    describe(dbType + ' with ' + (viewType.auto ? 'auto-' : '') +
+        (viewType.persisted ? 'persisted' : 'temp') +
+        ' views:', function () {
       tests(db, dbType, viewType);
     });
   });
@@ -93,7 +111,7 @@ describe('utils', function () {
 function tests(dbName, dbType, viewType) {
 
   var createView;
-  if (viewType === 'persisted') {
+  if (viewType.persisted && !viewType.auto) {
     createView = function (db, viewObj) {
       var storableViewObj = {
         map : viewObj.map.toString()
@@ -118,6 +136,9 @@ function tests(dbName, dbType, viewType) {
     };
   } else {
     createView = function (db, viewObj) {
+      if (viewType.auto) {
+        viewObj.saveAs = 'custom-' + Pouch.utils.MD5(viewObj.toString());
+      }
       return new Promise(function (resolve) {
         process.nextTick(function () {
           resolve(viewObj);
@@ -165,7 +186,7 @@ function tests(dbName, dbType, viewType) {
         });
       });
     });
-    if (dbType === 'local' && viewType === 'temp') {
+    if (dbType === 'local' && !viewType.persisted) {
       it("with a closure", function () {
         return new Pouch(dbName).then(function (db) {
           return db.bulkDocs({docs: [
@@ -194,7 +215,7 @@ function tests(dbName, dbType, viewType) {
         });
       });
     }
-    if (viewType === 'temp') {
+    if (!viewType.persisted) {
 
       it('Test simultaneous temp views', function () {
         return new Pouch(dbName).then(function (db) {
@@ -625,7 +646,7 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
-    if (viewType === 'temp') {
+    if (!viewType.persisted) {
       it("No reduce function, passing just a function", function () {
         return new Pouch(dbName).then(function (db) {
           return db.post({foo: 'bar'}).then(function () {
@@ -810,7 +831,7 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
-    if (viewType === 'persisted') {
+    if (viewType.persisted) {
 
       it('Returns ok for viewCleanup on empty db', function () {
         return new Pouch(dbName).then(function (db) {
@@ -1437,7 +1458,7 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
-    if (viewType === 'persisted') {
+    if (viewType.persisted) {
       it('should error with a callback', function (done) {
         new Pouch(dbName, function (err, db) {
           db.query('fake/thing', function (err) {
@@ -2060,7 +2081,7 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
-    if (viewType === 'persisted') {
+    if (viewType.persisted) {
       it('should query correctly when stale', function () {
         return new Pouch(dbName).then(function (db) {
           return createView(db, {
@@ -2621,7 +2642,7 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
-    if (viewType === 'persisted') {
+    if (viewType.persisted) {
 
       it('should delete duplicate indexes', function () {
         this.timeout(5000);
@@ -2798,6 +2819,64 @@ function tests(dbName, dbType, viewType) {
               return db.query(queryFun, {keys : ['foo']});
             }).then(function (res) {
               res.rows.should.have.length(1);
+            });
+          });
+        });
+      });
+    }
+
+    if (viewType.persisted && viewType.auto) {
+      it('allows us to auto-persist data, with closures', function () {
+        this.timeout(10000);
+        return new Pouch(dbName).then(function (db) {
+          var val = 'foo';
+          return createView(db, {
+            map: function (doc, emit) {
+              emit(val);
+            }
+          }).then(function (queryFun) {
+            var saveAs = queryFun.saveAs;
+            return db.bulkDocs({docs: [{}]}).then(function () {
+              return db.query(queryFun);
+            }).then(function (res) {
+              res.rows.should.have.length(1);
+              res.rows[0].key.should.equal('foo');
+              var randomFun = {
+                map : function () {
+                  emit('whatever');
+                }
+              };
+              return db.query(randomFun, {saveAs: saveAs});
+            }).then(function (res) {
+              // since we used the same saveAs, it should just give us the
+              // old results
+              res.rows.should.have.length(1);
+              res.rows[0].key.should.equal('foo');
+            });
+          });
+        });
+      });
+
+      it('allows us to delete auto-persisted data', function () {
+        this.timeout(10000);
+        return new Pouch(dbName).then(function (db) {
+          var val = 'foo';
+          return createView(db, {
+            map: function (doc, emit) {
+              emit(val);
+            }
+          }).then(function (queryFun) {
+            var saveAs = queryFun.saveAs;
+            return db.bulkDocs({docs: [{}]}).then(function () {
+              return db.query(queryFun).then(function (res) {
+                res.rows.should.have.length(1);
+                res.rows[0].key.should.equal('foo');
+                return db.query(queryFun, {saveAs: saveAs, destroy: true});
+              }).then(function () {
+                return db.query(queryFun, {saveAs: saveAs, stale: 'ok'});
+              }).then(function (res) {
+                res.rows.should.have.length(0);
+              });
             });
           });
         });
