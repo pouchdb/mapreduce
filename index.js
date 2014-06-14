@@ -259,41 +259,46 @@ function getDocsToPersist(docId, view, docIdsToEmits) {
   return view.db.get(metaDocId)
     .catch(defaultsTo({_id: metaDocId, keys: []}))
     .then(function (metaDoc) {
-      return view.db.allDocs({
-        keys: metaDoc.keys,
-        include_docs: true
+      return Promise.resolve().then(function () {
+        if (metaDoc.keys.length) {
+          return view.db.allDocs({
+            keys: metaDoc.keys,
+            include_docs: true
+          });
+        }
+        return {rows: []}; // no keys, no need for a lookup
       }).then(function (res) {
-          var kvDocs = res.rows.map(function (row) {
-            return row.doc;
-          }).filter(function (row) {
-              return row;
-            });
-
-          var indexableKeysToKeyValues = docIdsToEmits[docId];
-          var oldKeysMap = {};
-          kvDocs.forEach(function (kvDoc) {
-            oldKeysMap[kvDoc._id] = true;
-            kvDoc._deleted = !indexableKeysToKeyValues[kvDoc._id];
-            if (!kvDoc._deleted) {
-              kvDoc.value = indexableKeysToKeyValues[kvDoc._id];
-            }
-          });
-
-          var newKeys = Object.keys(indexableKeysToKeyValues);
-          newKeys.forEach(function (key) {
-            if (!oldKeysMap[key]) {
-              // new doc
-              kvDocs.push({
-                _id: key,
-                value: indexableKeysToKeyValues[key]
-              });
-            }
-          });
-          metaDoc.keys = utils.uniq(newKeys.concat(metaDoc.keys));
-          kvDocs.splice(0, 0, metaDoc);
-
-          return kvDocs;
+        var kvDocs = res.rows.map(function (row) {
+          return row.doc;
+        }).filter(function (row) {
+          return row;
         });
+
+        var indexableKeysToKeyValues = docIdsToEmits[docId];
+        var oldKeysMap = {};
+        kvDocs.forEach(function (kvDoc) {
+          oldKeysMap[kvDoc._id] = true;
+          kvDoc._deleted = !indexableKeysToKeyValues[kvDoc._id];
+          if (!kvDoc._deleted) {
+            kvDoc.value = indexableKeysToKeyValues[kvDoc._id];
+          }
+        });
+
+        var newKeys = Object.keys(indexableKeysToKeyValues);
+        newKeys.forEach(function (key) {
+          if (!oldKeysMap[key]) {
+            // new doc
+            kvDocs.push({
+              _id: key,
+              value: indexableKeysToKeyValues[key]
+            });
+          }
+        });
+        metaDoc.keys = utils.uniq(newKeys.concat(metaDoc.keys));
+        kvDocs.splice(0, 0, metaDoc);
+
+        return kvDocs;
+      });
     });
 }
 
