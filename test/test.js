@@ -467,6 +467,40 @@ function tests(dbName, dbType, viewType) {
       }).should.be.fulfilled;
     });
 
+    it("Query after db.close", function () {
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map: function (doc) {
+            emit(doc.foo, 'val');
+          }
+        }).then(function (queryFun) {
+          return db.put({_id: 'doc', foo: 'bar'}).then(function () {
+            return db.query(queryFun);
+          }).then(function (res) {
+            res.rows.should.deep.equal([
+              {
+                id: 'doc',
+                key: 'bar',
+                value: 'val'
+              }
+            ]);
+            return db.close();
+          }).then(function () {
+            db = new Pouch(dbName);
+            return db.query(queryFun).then(function (res) {
+              res.rows.should.deep.equal([
+                {
+                  id: 'doc',
+                  key: 'bar',
+                  value: 'val'
+                }
+              ]);
+            });
+          });
+        });
+      });
+    });
+
     it("Built in _sum reduce function", function () {
       return new Pouch(dbName).then(function (db) {
         return createView(db, {
