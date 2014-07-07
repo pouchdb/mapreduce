@@ -25,6 +25,7 @@ dbs.split(',').forEach(function (db) {
   var viewTypes = ['persisted', 'temp'];
   viewTypes.forEach(function (viewType) {
     describe(dbType + ' with ' + viewType + ' views:', function () {
+      this.timeout(5000);
       tests(db, dbType, viewType);
     });
   });
@@ -2108,13 +2109,13 @@ function tests(dbName, dbType, viewType) {
             ]}).then(function () {
               return db.query(queryFun, {stale : 'ok'});
             }).then(function (res) {
-              res.total_rows.should.be.within(0, 2);
+              res.total_rows.should.be.within(0, 2, 'res.total_rows is 0-2');
               res.offset.should.equal(0);
-              res.rows.length.should.be.within(0, 2);
+              res.rows.should.be.within(0, 2, 'res.rows is 0-2');
               return db.query(queryFun, {stale : 'update_after'});
             }).then(function (res) {
-              res.total_rows.should.be.within(0, 2);
-              res.rows.length.should.be.within(0, 2);
+              res.total_rows.should.be.within(0, 2, 'res.total_rows is 0-2 (#2)');
+              res.rows.length.should.be.within(0, 2, 'res.rows is 0-2 (#2)');
               return setTimeoutPromise(5);
             }).then(function () {
               return db.query(queryFun, {stale : 'ok'});
