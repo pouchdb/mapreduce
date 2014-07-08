@@ -2655,6 +2655,22 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
+    it('should throw a 404 when no functions can be found in the design doc (#181)', function () {
+      return new Pouch(dbName).then(function (db) {
+        return db.put({
+          _id: '_design/test'
+        }).then(function () {
+          return db.query('test/unexisting');
+        }).then(function () {
+          //shouldn't happen
+          true.should.be.false;
+        }).catch(function (err) {
+          err.status.should.equal(404);
+        });
+      });
+    });
+
+
     if (viewType === 'persisted') {
 
       it('should delete duplicate indexes', function () {
