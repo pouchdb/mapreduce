@@ -663,11 +663,8 @@ function queryPromised(db, fun, opts) {
       var fun = doc.views && doc.views[viewName];
 
       if (!fun || typeof fun.map !== 'string') {
-        var error = new Error('ddoc ' + designDocName + ' has no view named ' +
+        throw new NotFoundError('ddoc ' + designDocName + ' has no view named ' +
           viewName);
-        error.name = 'not_found';
-        error.status = 400;
-        throw error;
       }
       checkQueryParseError(opts, fun);
 
@@ -723,3 +720,15 @@ function QueryParseError(message) {
 }
 
 utils.inherits(QueryParseError, Error);
+
+function NotFoundError(message) {
+  this.status = 404;
+  this.name = 'not_found';
+  this.message = message;
+  this.error = true;
+  try {
+    Error.captureStackTrace(this, NotFoundError);
+  } catch (e) {}
+}
+
+utils.inherits(NotFoundError, Error);
