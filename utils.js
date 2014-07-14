@@ -16,6 +16,9 @@ exports.uniq = function (arr) {
 
 exports.inherits = require('inherits');
 exports.extend = require('pouchdb-extend');
+exports.clone = function (obj) {
+  return exports.extend(true, {}, obj);
+};
 var argsarray = require('argsarray');
 
 exports.promisedCallback = function (promise, callback) {
