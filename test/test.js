@@ -2088,6 +2088,7 @@ function tests(dbName, dbType, viewType) {
 
     if (viewType === 'persisted') {
       it('should query correctly when stale', function () {
+        this.timeout(20000);
         return new Pouch(dbName).then(function (db) {
           return createView(db, {
             map : function (doc) {
@@ -2139,13 +2140,39 @@ function tests(dbName, dbType, viewType) {
               res.rows.length.should.equal(1);
               ['baz', 'bar'].indexOf(res.rows[0].key).should.be.above(-1,
                 'key might be stale, thats ok');
-              return setTimeoutPromise(5);
+              return setTimeoutPromise(1000);
             }).then(function () {
               return db.query(queryFun, {stale : 'ok'});
             }).then(function (res) {
               res.rows.length.should.equal(1);
               res.rows[0].key.should.equal('baz');
             });
+          });
+        });
+      });
+
+      it('should query correctly with stale update_after', function () {
+        this.timeout(20000);
+        var pouch = new Pouch(dbName);
+
+        return createView(pouch, {map: function (doc) {
+          emit(doc.foo);
+        }}).then(function (queryFun) {
+          var docs = [];
+
+          for (var i = 0; i < 10; i++) {
+            docs.push({foo: 'bar'});
+          }
+
+          return pouch.bulkDocs(docs).then(function () {
+            return pouch.query(queryFun, {stale: 'update_after'});
+          }).then(function (res) {
+            res.rows.should.have.length(0, 'query() returned immediately');
+            return setTimeoutPromise(1000);
+          }).then(function () {
+            return pouch.query(queryFun, {stale: 'ok'});
+          }).then(function (res) {
+            res.rows.should.have.length(10, 'index was built in background');
           });
         });
       });
