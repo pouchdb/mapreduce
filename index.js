@@ -179,6 +179,7 @@ function httpQuery(db, fun, opts) {
   addHttpParam('group', opts, params);
   addHttpParam('group_level', opts, params);
   addHttpParam('skip', opts, params);
+  addHttpParam('stale', opts, params);
   addHttpParam('startkey', opts, params, true);
   addHttpParam('endkey', opts, params, true);
   addHttpParam('inclusive_end', opts, params);
