@@ -25,6 +25,7 @@ dbs.split(',').forEach(function (db) {
   var viewTypes = ['persisted', 'temp'];
   viewTypes.forEach(function (viewType) {
     describe(dbType + ' with ' + viewType + ' views:', function () {
+      this.timeout(10000);
       tests(db, dbType, viewType);
     });
   });
@@ -134,7 +135,6 @@ function tests(dbName, dbType, viewType) {
   });
   describe('views', function () {
     it("Test basic view", function () {
-      this.timeout(10000);
       return new Pouch(dbName).then(function (db) {
         return createView(db, {
           map: function (doc) {
@@ -358,7 +358,6 @@ function tests(dbName, dbType, viewType) {
     });
 
     it("Test basic view collation", function () {
-      this.timeout(10000);
       
       var values = [];
 
@@ -972,7 +971,6 @@ function tests(dbName, dbType, viewType) {
     });
 
     it('xxx - multiple view creations and cleanups', function () {
-      this.timeout(10000);
       return new Pouch(dbName).then(function (db) {
         var map = function (doc) {
           emit(doc.num);
@@ -1074,7 +1072,6 @@ function tests(dbName, dbType, viewType) {
     });
 
     it('Map documents on 0/null/undefined/empty string', function () {
-      this.timeout(10000);
       return new Pouch(dbName).then(function (db) {
         return createView(db, {
           map : function (doc) {
@@ -1121,7 +1118,6 @@ function tests(dbName, dbType, viewType) {
     });
 
     it('Testing query with keys', function () {
-      this.timeout(10000);
       return new Pouch(dbName).then(function (db) {
         return createView(db, {
           map: function (doc) {
@@ -1510,7 +1506,6 @@ function tests(dbName, dbType, viewType) {
     });
 
     it('should query correctly with a variety of criteria', function () {
-      this.timeout(10000);
       return new Pouch(dbName).then(function (db) {
 
         return createView(db, {
@@ -1786,7 +1781,6 @@ function tests(dbName, dbType, viewType) {
       });
     });
     it('should correctly return results when reducing or not reducing', function () {
-      this.timeout(10000);
 
       function keyValues(row) {
         return { key: row.key, value: row.value };
@@ -1948,7 +1942,6 @@ function tests(dbName, dbType, viewType) {
     });
 
     it('should query correctly after many edits', function () {
-      this.timeout(10000);
       return new Pouch(dbName).then(function (db) {
         return createView(db, {
           map : function (doc) {
@@ -2036,7 +2029,6 @@ function tests(dbName, dbType, viewType) {
     });
 
     it('should query correctly with staggered seqs', function () {
-      this.timeout(10000);
       return new Pouch(dbName).then(function (db) {
         return createView(db, {
           map : function (doc) {
@@ -2308,7 +2300,6 @@ function tests(dbName, dbType, viewType) {
       });
     });
     it('should properly query custom reduce functions', function () {
-      this.timeout(10000);
       return new Pouch(dbName).then(function (db) {
         return createView(db, {
           map : function (doc) {
@@ -2484,7 +2475,6 @@ function tests(dbName, dbType, viewType) {
     });
 
     it('should handle many doc changes', function () {
-      this.timeout(10000);
 
       var docs = [{_id: '0'}, {_id : '1'}, {_id: '2'}];
 
@@ -2551,7 +2541,6 @@ function tests(dbName, dbType, viewType) {
     });
 
     it('should handle many doc changes', function () {
-      this.timeout(10000);
 
       var docs = [{_id: '0'}, {_id : '1'}, {_id: '2'}];
 
@@ -2674,7 +2663,6 @@ function tests(dbName, dbType, viewType) {
     if (viewType === 'persisted') {
 
       it('should delete duplicate indexes', function () {
-        this.timeout(5000);
         var docs = [];
         for (var i = 0; i < 10; i++) {
           docs.push(
@@ -2734,7 +2722,6 @@ function tests(dbName, dbType, viewType) {
       });
 
       it('should allow the user to create many design docs', function () {
-        this.timeout(4000);
         function getKey(row) {
           return row.key;
         }
