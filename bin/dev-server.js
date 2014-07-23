@@ -8,7 +8,7 @@ var HTTP_PORT = 8001;
 var CORS_PORT = 2021;
 
 var cors_proxy = require("corsproxy");
-var http_proxy = require("http-proxy");
+var http_proxy = require("pouchdb-http-proxy");
 var http_server = require("http-server");
 var fs = require('fs');
 
