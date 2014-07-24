@@ -165,6 +165,37 @@ function tests(dbName, dbType, viewType) {
         });
       });
     });
+    it("Test basic view, no emitted value", function () {
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map: function (doc) {
+            emit(doc.foo);
+          }
+        }).then(function (view) {
+            return db.bulkDocs({docs: [
+              {foo: 'bar'},
+              { _id: 'volatile', foo: 'baz' }
+            ]}).then(function () {
+                return db.get('volatile');
+              }).then(function (doc) {
+                return db.remove(doc);
+              }).then(function () {
+                return db.query(view, {include_docs: true, reduce: false});
+              }).then(function (res) {
+                res.rows.should.have.length(1, 'Dont include deleted documents');
+                res.total_rows.should.equal(1, 'Include total_rows property.');
+                res.rows.forEach(function (x) {
+                  should.exist(x.id);
+                  should.exist(x.key);
+                  should.equal(x.value, null);
+                  should.exist(x.doc);
+                  should.exist(x.doc._rev);
+                });
+              });
+          });
+      });
+    });
+
     if (dbType === 'local' && viewType === 'temp') {
       it("with a closure", function () {
         return new Pouch(dbName).then(function (db) {
@@ -2682,6 +2713,44 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
+    it('should update the emitted value', function () {
+      this.timeout(30000);
+      return new Pouch(dbName).then(function (db) {
+        var docs = [];
+        for (var i = 0; i < 300; i++) {
+          docs.push({
+            _id: i.toString(),
+            name: 'foo',
+            count: 1
+          });
+        }
+
+        return createView(db, {
+          map: "function(doc){emit(doc.name, doc.count);};\n"
+        }).then(function (queryFun) {
+          return db.bulkDocs({docs: docs}).then(function (res) {
+            for (var i = 0; i < res.length; i++) {
+              docs[i]._rev = res[i].rev;
+            }
+            return db.query(queryFun);
+          }).then(function (res) {
+            var values = res.rows.map(function (x) { return x.value; });
+            values.should.have.length(docs.length);
+            values[0].should.equal(1);
+            docs.forEach(function (doc) {
+              doc.count = 2;
+            });
+            return db.bulkDocs({docs: docs});
+          }).then(function () {
+            return db.query(queryFun);
+          }).then(function (res) {
+            var values = res.rows.map(function (x) { return x.value; });
+            values.should.have.length(docs.length);
+            values[0].should.equal(2);
+          });
+        });
+      });
+    });
 
     if (viewType === 'persisted') {
 
