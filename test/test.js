@@ -2670,6 +2670,44 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
+    it('should update the emitted value', function () {
+      this.timeout(30000);
+      return new Pouch(dbName).then(function (db) {
+        var docs = [];
+        for (var i = 0; i < 300; i++) {
+          docs.push({
+            _id: i.toString(),
+            name: 'foo',
+            count: 1
+          });
+        }
+
+        return createView(db, {
+          map: "function(doc){emit(doc.name, doc.count);};\n"
+        }).then(function (queryFun) {
+          return db.bulkDocs({docs: docs}).then(function (res) {
+            for (var i = 0; i < res.length; i++) {
+              docs[i]._rev = res[i].rev;
+            }
+            return db.query(queryFun);
+          }).then(function (res) {
+            var values = res.rows.map(function (x) { return x.value; });
+            values.should.have.length(docs.length);
+            values[0].should.equal(1);
+            docs.forEach(function (doc) {
+              doc.count = 2;
+            });
+            return db.bulkDocs({docs: docs});
+          }).then(function () {
+            return db.query(queryFun);
+          }).then(function (res) {
+            var values = res.rows.map(function (x) { return x.value; });
+            values.should.have.length(docs.length);
+            values[0].should.equal(2);
+          });
+        });
+      });
+    });
 
     if (viewType === 'persisted') {
 

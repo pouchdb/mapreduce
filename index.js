@@ -275,7 +275,10 @@ function getDocsToPersist(docId, view, docIdsToEmits) {
             oldKeysMap[kvDoc._id] = true;
             kvDoc._deleted = !indexableKeysToKeyValues[kvDoc._id];
             if (!kvDoc._deleted) {
-              kvDoc.value = indexableKeysToKeyValues[kvDoc._id];
+              var keyValue = indexableKeysToKeyValues[kvDoc._id];
+              if (keyValue.value !== null) {
+                kvDoc.value = keyValue.value;
+              }
             }
           });
 
@@ -283,10 +286,14 @@ function getDocsToPersist(docId, view, docIdsToEmits) {
           newKeys.forEach(function (key) {
             if (!oldKeysMap[key]) {
               // new doc
-              kvDocs.push({
-                _id: key,
-                value: indexableKeysToKeyValues[key]
-              });
+              var kvDoc = {
+                _id: key
+              };
+              var keyValue = indexableKeysToKeyValues[key];
+              if (keyValue.value !== null) {
+                kvDoc.value = keyValue.value;
+              }
+              kvDocs.push(kvDoc);
             }
           });
           metaDoc.keys = utils.uniq(newKeys.concat(metaDoc.keys));
@@ -476,7 +483,27 @@ var queryView = utils.sequentialize(mainQueue, function (view, opts) {
     return view.db.allDocs(viewOpts).then(function (res) {
       totalRows = res.total_rows;
       return res.rows.map(function (result) {
-        return result.doc.value;
+
+        // implicit migration - in older versions of PouchDB,
+        // we explicitly stored the doc as {id: ..., key: ..., value: ...}
+        /* istanbul ignore next */
+        if ('value' in result.doc && typeof result.doc.value === 'object' &&
+            result.doc.value !== null) {
+          var keys = Object.keys(result.doc.value).sort();
+          // this detection method is not perfect, but it's unlikely the user
+          // emitted a value which was an object with these 3 exact keys
+          var expectedKeys = ['id', 'key', 'value'];
+          if (!(keys < expectedKeys || keys > expectedKeys)) {
+            return result.doc.value;
+          }
+        }
+
+        var parsedKeyAndDocId = pouchCollate.parseIndexableString(result.doc._id);
+        return {
+          key: parsedKeyAndDocId[0],
+          id: parsedKeyAndDocId[1],
+          value: ('value' in result.doc ? result.doc.value : null)
+        };
       });
     });
   }
