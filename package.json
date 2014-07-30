@@ -34,7 +34,7 @@
     "es3ify": "^0.1.3",
     "inherits": "~2.0.1",
     "lie": "^2.6.0",
-    "pouchdb-collate": "~1.1.0",
+    "pouchdb-collate": "pouchdb/collate#parse-indexable-string",
     "pouchdb-extend": "^0.1.0",
     "spark-md5": "0.0.5"
   },
