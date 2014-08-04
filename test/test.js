@@ -779,14 +779,12 @@ function tests(dbName, dbType, viewType) {
             res.should.not.exist('expected error on invalid group_level');
           }).catch(function (err) {
             err.status.should.equal(400);
-            err.name.should.equal('query_parse_error');
             err.message.should.be.a('string');
             return db.query(queryFun, { group_level: 'exact', reduce: true});
           }).then(function (res) {
             res.should.not.exist('expected error on invalid group_level');
           }).catch(function (err) {
             err.status.should.equal(400);
-            err.name.should.equal('query_parse_error');
             err.message.should.be.a('string');
           });
         });
@@ -1610,7 +1608,6 @@ function tests(dbName, dbType, viewType) {
               res.should.not.exist('expected error on reversed start/endkey');
             }).catch(function (err) {
               err.status.should.equal(400);
-              err.name.should.equal('query_parse_error');
               err.message.should.be.a('string');
             });
           });
@@ -1883,7 +1880,6 @@ function tests(dbName, dbType, viewType) {
               should.not.exist(res);
             }).catch(function (err) {
               err.status.should.equal(400);
-              err.name.should.equal('query_parse_error');
               err.message.should.be.a('string');
               // include_docs is invalid for reduce
             });
@@ -2240,12 +2236,12 @@ function tests(dbName, dbType, viewType) {
           return db.query(queryFun, opts).then(function (res) {
             should.not.exist(res);
           }).catch(function (err) {
-            err.name.should.equal('query_parse_error');
+            err.status.should.equal(400);
             opts = {keys: keys};
             return db.query(queryFun, opts).then(function (res) {
               should.not.exist(res);
             }).catch(function (err) {
-              err.name.should.equal('query_parse_error');
+              err.status.should.equal(400);
               opts = {keys: keys, reduce : false};
               return db.query(queryFun, opts).then(function () {
                 opts = {keys: keys, group: true};
@@ -2732,16 +2728,16 @@ function tests(dbName, dbType, viewType) {
           }).then(function (res) {
             should.not.exist(res);
           }).catch(function (err) {
-            err.name.should.equal('not_found');
+            err.status.should.equal(404);
             return db.put(({_id : '_design/void', views : {1 : null}})).then(function () {
               return db.query('void/1');
             }).then(function (res) {
               should.not.exist(res);
             }).catch(function (err) {
-              err.name.should.be.a('string');
+              err.status.should.be.a('number');
               // this might throw due to erroneous ddoc, but that's ok
               return db.viewCleanup().catch(function (err) {
-                err.name.should.equal('unknown_error');
+                err.status.should.equal(500);
               });
             });
           });
@@ -2807,11 +2803,11 @@ function tests(dbName, dbType, viewType) {
             return db.query('foo/byField').then(function (res) {
               should.not.exist(res);
             }).catch(function (err) {
-              err.name.should.equal('not_found');
+              err.status.should.equal(404);
               return db.query('bar/byId').then(function (res) {
                 should.not.exist(res);
               }).catch(function (err) {
-                err.name.should.equal('not_found');
+                err.status.should.equal(404);
                 return db.get('_design/foo').then(function (fooDoc) {
                   return db.remove(fooDoc).then(function () {
                     return db.viewCleanup();
