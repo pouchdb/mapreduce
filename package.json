@@ -49,7 +49,7 @@
     "jshint": "~2.3.0",
     "mocha": "~1.18",
     "phantomjs": "^1.9.7-5",
-    "pouchdb": "pouchdb/pouchdb",
+    "pouchdb": "pouchdb/pouchdb#compaction",
     "pouchdb-http-proxy": "~0.10.3",
     "request": "^2.34.0",
     "sauce-connect-launcher": "^0.4.2",
