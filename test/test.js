@@ -2713,6 +2713,26 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
+    it('should emit rows with correct row.id event if the map function modifies the doc._id', function () {
+      return new Pouch(dbName).then(function (db) {
+        return db.put({
+          _id: '_design/test',
+          views: {
+            deleter: {
+              map: 'function (doc) { doc._id = "y"; emit(doc._id); }'
+            }
+          }
+        }).then(function () {
+          db.put({_id: 'x'});
+        }).then(function () {
+          return db.query('test/deleter');
+        }).then(function (res) {
+          res.rows[0].id.should.equal('x');
+          res.rows[0].key.should.equal('y');
+        });
+      })
+    });
+
     it('should update the emitted value', function () {
       this.timeout(30000);
       return new Pouch(dbName).then(function (db) {
