@@ -401,7 +401,7 @@ var updateView = utils.sequentialize(mainQueue, function (view) {
             doc = change.doc;
 
             if (!doc._deleted) {
-              tryCode(view.sourceDB, mapFun, [doc]);
+              tryCode(view.sourceDB, mapFun, [utils.extend({}, doc, true)]);
             }
             mapResults.sort(sortByKeyThenValue);
 
