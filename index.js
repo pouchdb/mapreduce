@@ -373,6 +373,14 @@ var updateView = utils.sequentialize(mainQueue, function (view) {
   var queue = new TaskQueue();
   // TODO(neojski): https://github.com/daleharvey/pouchdb/issues/1521
 
+  // QUIO SPECIFIC
+  var quio_model;
+  if( view.mapFun.indexOf( "VIEWVIEWVIEW" ) >= 0 ){
+    var _s	= view.mapFun.indexOf(" ",view.mapFun.indexOf( "VIEWVIEWVIEW" ));
+    quio_model	= view.mapFun.slice( _s+1, view.mapFun.indexOf("*",_s));
+  }
+
+
   return new Promise(function (resolve, reject) {
 
     function complete() {
@@ -387,7 +395,8 @@ var updateView = utils.sequentialize(mainQueue, function (view) {
         conflicts: true,
         include_docs: true,
         since : currentSeq,
-        limit : CHANGES_BATCH_SIZE
+        limit : CHANGES_BATCH_SIZE,
+        quio_model: quio_model
       }).on('complete', function (response) {
         var results = response.results;
         if (!results.length) {
