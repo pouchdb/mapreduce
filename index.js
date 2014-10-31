@@ -538,7 +538,7 @@ var queryView = utils.sequentialize(mainQueue, function (view, opts) {
       var getDocsPromises = results.map(function (row) {
         var val = row.value;
         var docId = (val && typeof val === 'object' && val._id) || row.id;
-        return view.sourceDB.get(docId).then(function (joinedDoc) {
+        return view.sourceDB.get(docId, {conflicts: opts.conflicts}).then(function (joinedDoc) {
           row.doc = joinedDoc;
         }, function () {
           // document error = don't join

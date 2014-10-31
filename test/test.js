@@ -723,7 +723,7 @@ function tests(dbName, dbType, viewType) {
                 }
               }, {include_docs : true, conflicts: true});
             }).then(function (res) {
-              // res.rows[0].doc._conflicts.should.exist;
+              res.rows[0].doc._conflicts.should.exist;
               return db.get(res.rows[0].doc._id, {conflicts: true});
             }).then(function (res) {
               res._conflicts.should.exist;
