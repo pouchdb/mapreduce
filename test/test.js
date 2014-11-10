@@ -709,27 +709,27 @@ function tests(dbName, dbType, viewType) {
       };
       var doc1 = {_id: '1', foo: 'bar'};
       var doc2 = {_id: '1', foo: 'baz'};
-      return new Pouch(dbName).then(function (db) {
+      return utils.fin(new Pouch(dbName).then(function (db) {
         return new Pouch(db2name).then(function (remote) {
-            var replicate = Promise.promisify(db.replicate.from, db.replicate);
-            return db.post(doc1).then(function () {
-              return remote.post(doc2);
-            }).then(function () {
-              return replicate(remote);
-            }).then(function () {
-              return db.query(function (doc) {
-                if (doc._conflicts) {
-                  emit(doc._conflicts, null);
-                }
-              }, {include_docs : true, conflicts: true});
-            }).then(function (res) {
-              res.rows[0].doc._conflicts.should.exist;
-              return db.get(res.rows[0].doc._id, {conflicts: true});
-            }).then(function (res) {
-              res._conflicts.should.exist;
-            });
-          }).finally(cleanup);
-      });
+          var replicate = Promise.promisify(db.replicate.from, db.replicate);
+          return db.post(doc1).then(function () {
+            return remote.post(doc2);
+          }).then(function () {
+            return replicate(remote);
+          }).then(function () {
+            return db.query(function (doc) {
+              if (doc._conflicts) {
+                emit(doc._conflicts, null);
+              }
+            }, {include_docs : true, conflicts: true});
+          }).then(function (res) {
+            res.rows[0].doc._conflicts.should.exist;
+            return db.get(res.rows[0].doc._id, {conflicts: true});
+          }).then(function (res) {
+            res._conflicts.should.exist;
+          });
+        });
+      }), cleanup);
     });
 
 
@@ -740,7 +740,7 @@ function tests(dbName, dbType, viewType) {
       };
       var doc1 = {_id: '1', foo: 'bar'};
       var doc2 = {_id: '1', foo: 'baz'};
-      return new Pouch(dbName).then(function (db) {
+      return utils.fin(new Pouch(dbName).then(function (db) {
         return new Pouch(db2name).then(function (remote) {
           return createView(db, {
             map : function (doc) {
@@ -760,9 +760,9 @@ function tests(dbName, dbType, viewType) {
             }).then(function (res) {
               res.rows[0].value.should.be.true;
             });
-          }).finally(cleanup);
+          });
         });
-      });
+      }), cleanup);
     });
 
     it("Test view querying with limit option", function () {
