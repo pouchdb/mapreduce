@@ -24,3 +24,4 @@ In TEST_DB environment variable specify database that PouchDB should use (see pa
 ### In the browser
 
 Run `npm run dev` and then point your favorite browser to [http://127.0.0.1:8001/test/index.html](http://127.0.0.1:8001/test/index.html).
+
