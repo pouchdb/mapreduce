@@ -1,6 +1,8 @@
 Map Reduce
 =====
 
+[![Build Status](https://travis-ci.org/pouchdb/mapreduce.svg)](https://travis-ci.org/pouchdb/mapreduce)
+
 Map/reduce plugin pulled out of PouchDB.  A PouchDB plugin that, like [PouchDB Collate](https://github.com/pouchdb/collate), is bundled directly with PouchDB.
 
 Building
