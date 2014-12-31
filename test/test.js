@@ -1094,6 +1094,51 @@ function tests(dbName, dbType, viewType) {
           });
         }).should.be.rejected;
       });
+
+      it('many simultaneous persisted views', function () {
+        this.timeout(30000);
+        var db = new Pouch(dbName);
+
+        var views = [];
+        var doc = {_id: 'foo'};
+        for (var i = 0; i < 40; i++) {
+          views.push('foo_' + i);
+          doc['foo_' + i] = 'bar_' + i;
+        }
+
+        return db.put(doc).then(function () {
+          return Promise.all(views.map(function (_, i) {
+            var fun = "function (doc) { emit(doc.foo_" + i + ");}";
+
+            var ddocId = 'theViewDoc_' + i;
+            var ddoc = {
+              _id: '_design/' + ddocId,
+              views: {
+                theView : {map: fun}
+              }
+            };
+
+            return db.put(ddoc).then(function (res) {
+              ddoc._rev = res.rev;
+              return db.query(ddocId + '/theView');
+            }).then(function (res) {
+              res.rows.should.have.length(1);
+              res.rows[0].key.should.equal('bar_' + i);
+              res.rows[0].id.should.equal('foo');
+              return db.remove(ddoc);
+            }).then(function () {
+              return db.viewCleanup();
+            }).then(function () {
+              return db.query(ddocId + '/theView').then(function () {
+                throw new Error('view should have been deleted');
+              }, function (err) {
+                should.exist(err);
+              });
+            });
+          }));
+        });
+      });
+
     }
 
     it("Special document member _doc_id_rev should never leak outside", function () {

@@ -16,7 +16,7 @@ if ((typeof console !== 'undefined') && (typeof console.log === 'function')) {
 }
 var utils = require('./utils');
 var Promise = utils.Promise;
-var mainQueue = new TaskQueue();
+var persistentQueues = {};
 var tempViewQueue = new TaskQueue();
 var CHANGES_BATCH_SIZE = 50;
 
@@ -347,13 +347,28 @@ function saveKeyValues(view, docIdsToEmits, seq) {
   });
 }
 
-var updateView = utils.sequentialize(mainQueue, function (view) {
+function getQueue(view) {
+  var viewName = typeof view === 'string' ? view : view.name;
+  var queue = persistentQueues[viewName];
+  if (!queue) {
+    queue = persistentQueues[viewName] = new TaskQueue();
+  }
+  return queue;
+}
+
+function updateView(view) {
+  return utils.sequentialize(getQueue(view), function () {
+    return updateViewInQueue(view);
+  })();
+}
+
+function updateViewInQueue(view) {
   // bind the emit function once
   var mapResults;
   var doc;
 
   function emit(key, value) {
-    var output = { id: doc._id, key: normalizeKey(key) };
+    var output = {id: doc._id, key: normalizeKey(key)};
     // Don't explicitly store the value unless it's defined and non-null.
     // This saves on storage space, because often people don't use it.
     if (typeof value !== 'undefined' && value !== null) {
@@ -380,6 +395,7 @@ var updateView = utils.sequentialize(mainQueue, function (view) {
       return saveKeyValues(view, docIdsToEmits, seq);
     };
   }
+
   var queue = new TaskQueue();
   // TODO(neojski): https://github.com/daleharvey/pouchdb/issues/1521
 
@@ -396,8 +412,8 @@ var updateView = utils.sequentialize(mainQueue, function (view) {
       view.sourceDB.changes({
         conflicts: true,
         include_docs: true,
-        since : currentSeq,
-        limit : CHANGES_BATCH_SIZE
+        since: currentSeq,
+        limit: CHANGES_BATCH_SIZE
       }).on('complete', function (response) {
         var results = response.results;
         if (!results.length) {
@@ -442,9 +458,10 @@ var updateView = utils.sequentialize(mainQueue, function (view) {
         reject(err);
       }
     }
+
     processNextBatch();
   });
-});
+}
 
 function reduceView(view, results, options) {
   if (options.group_level === 0) {
@@ -492,7 +509,13 @@ function reduceView(view, results, options) {
   return {rows: sliceResults(groups, options.limit, options.skip)};
 }
 
-var queryView = utils.sequentialize(mainQueue, function (view, opts) {
+function queryView(view, opts) {
+  return utils.sequentialize(getQueue(view), function () {
+    return queryViewInQueue(view, opts);
+  })();
+}
+
+function queryViewInQueue(view, opts) {
   var totalRows;
   var shouldReduce = view.reduceFun && opts.reduce !== false;
   var skip = opts.skip || 0;
@@ -625,7 +648,7 @@ var queryView = utils.sequentialize(mainQueue, function (view, opts) {
     }
     return fetchFromView(viewOpts).then(onMapResultsReady);
   }
-});
+}
 
 function httpViewCleanup(db) {
   return db.request({
@@ -634,7 +657,7 @@ function httpViewCleanup(db) {
   });
 }
 
-var localViewCleanup = utils.sequentialize(mainQueue, function (db) {
+function localViewCleanup(db) {
   return db.get('_local/mrviews').then(function (metaDoc) {
     var docsToViews = {};
     Object.keys(metaDoc.views).forEach(function (fullViewName) {
@@ -672,14 +695,16 @@ var localViewCleanup = utils.sequentialize(mainQueue, function (db) {
         return !viewsToStatus[viewDBName];
       });
       var destroyPromises = dbsToDelete.map(function (viewDBName) {
-        return db.constructor.destroy(viewDBName, db.__opts);
+        return utils.sequentialize(getQueue(viewDBName), function () {
+          return db.constructor.destroy(viewDBName, db.__opts);
+        })();
       });
       return Promise.all(destroyPromises).then(function () {
         return {ok: true};
       });
     });
   }, defaultsTo({ok: true}));
-});
+}
 
 exports.viewCleanup = utils.callbackify(function () {
   var db = this;
