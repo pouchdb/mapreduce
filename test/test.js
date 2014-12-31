@@ -1501,6 +1501,151 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
+    it('#238 later non-winning revisions', function () {
+      var db = new Pouch(dbName);
+
+      return createView(db, {
+        map: function (doc) {
+          emit(doc.name);
+        }
+      }).then(function (mapFun) {
+        return db.bulkDocs([{
+          _id: 'doc',
+          name: 'zoot',
+          _rev: '2-x',
+          _revisions: {
+            start: 2,
+            ids: ['x', 'y']
+          }
+        }], {new_edits: false}).then(function () {
+          return db.query(mapFun);
+        }).then(function (res) {
+          res.rows.should.have.length(1);
+          res.rows[0].id.should.equal('doc');
+          res.rows[0].key.should.equal('zoot');
+          return db.bulkDocs([{
+            _id: 'doc',
+            name: 'suit',
+            _rev: '2-w',
+            _revisions: {
+              start: 2,
+              ids: ['w', 'y']
+            }
+          }], {new_edits: false});
+        }).then(function () {
+          return db.query(mapFun);
+        }).then(function (res) {
+          res.rows.should.have.length(1);
+          res.rows[0].id.should.equal('doc');
+          res.rows[0].key.should.equal('zoot');
+        });
+      });
+    });
+
+    it('#238 later non-winning deleted revisions', function () {
+      var db = new Pouch(dbName);
+
+      return createView(db, {
+        map: function (doc) {
+          emit(doc.name);
+        }
+      }).then(function (mapFun) {
+        return db.bulkDocs([{
+          _id: 'doc',
+          name: 'zoot',
+          _rev: '2-x',
+          _revisions: {
+            start: 2,
+            ids: ['x', 'y']
+          }
+        }], {new_edits: false}).then(function () {
+          return db.query(mapFun);
+        }).then(function (res) {
+          res.rows.should.have.length(1);
+          res.rows[0].id.should.equal('doc');
+          res.rows[0].key.should.equal('zoot');
+          return db.bulkDocs([{
+            _id: 'doc',
+            name: 'suit',
+            _deleted: true,
+            _rev: '2-z',
+            _revisions: {
+              start: 2,
+              ids: ['z', 'y']
+            }
+          }], {new_edits: false});
+        }).then(function () {
+          return db.query(mapFun);
+        }).then(function (res) {
+          res.rows.should.have.length(1);
+          res.rows[0].id.should.equal('doc');
+          res.rows[0].key.should.equal('zoot');
+        });
+      });
+    });
+
+    it('#238 query with conflicts', function () {
+      var db = new Pouch(dbName);
+
+      return createView(db, {
+        map: function (doc) {
+          emit(doc.name);
+        }
+      }).then(function (mapFun) {
+        return db.bulkDocs([
+
+          {
+            _id: 'doc',
+            name: 'zab',
+            _rev: '2-y',
+            _revisions: {
+              start: 1,
+              ids: ['y']
+            }
+          }, {
+            _id: 'doc',
+            name: 'zoot',
+            _rev: '2-x',
+            _revisions: {
+              start: 2,
+              ids: ['x', 'y']
+            }
+          }
+        ], {new_edits: false}).then(function () {
+          return db.query(mapFun);
+        }).then(function (res) {
+          res.rows.should.have.length(1);
+          res.rows[0].id.should.equal('doc');
+          res.rows[0].key.should.equal('zoot');
+          return db.bulkDocs([
+            {
+              _id: 'doc',
+              name: 'suit',
+              _rev: '2-w',
+              _revisions: {
+                start: 2,
+                ids: ['w', 'y']
+              }
+            }, {
+              _id: 'doc',
+              name: 'zorb',
+              _rev: '2-z',
+              _revisions: {
+                start: 2,
+                ids: ['z', 'y']
+              }
+            }
+          ], {new_edits: false});
+        }).then(function () {
+          return db.query(mapFun);
+        }).then(function (res) {
+          res.rows.should.have.length(1);
+          res.rows[0].id.should.equal('doc');
+          res.rows[0].key.should.equal('zorb');
+        });
+      });
+    });
+
     it('Testing ordering with startkey/endkey/key', function () {
       var opts = {startkey: '1', endkey: '4'};
       function ids(row) {
