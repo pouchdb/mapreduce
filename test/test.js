@@ -820,6 +820,108 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
+    it('#242 conflicts at the root level', function () {
+      var db = new Pouch(dbName);
+
+      return db.bulkDocs([
+        {
+          foo: '1',
+          _id: 'foo',
+          _rev: '1-w',
+          _revisions: {start: 1, ids: ['w']}
+        }
+      ], {new_edits: false}).then(function () {
+        return createView(db, {
+          map: function (doc) {
+            emit(doc.foo);
+          }
+        }).then(function (queryFun) {
+          return db.query(queryFun).then(function (res) {
+            res.rows[0].key.should.equal('1');
+            return db.bulkDocs([
+              {
+                foo: '2',
+                _id: 'foo',
+                _rev: '1-x',
+                _revisions: {start: 1, ids: ['x']}
+              }
+            ], {new_edits: false}).then(function () {
+              return db.query(queryFun);
+            }).then(function (res) {
+              res.rows[0].key.should.equal('2');
+              return db.bulkDocs([
+                {
+                  foo: '3',
+                  _id: 'foo',
+                  _rev: '1-y',
+                  _deleted: true,
+                  _revisions: {start: 1, ids: ['y']}
+                }
+              ], {new_edits: false});
+            }).then(function () {
+              return db.query(queryFun);
+            }).then(function (res) {
+              res.rows[0].key.should.equal('2');
+            });
+          });
+        });
+      });
+    });
+
+    it('#242 conflicts at the root+1 level', function () {
+      var db = new Pouch(dbName);
+
+      return db.bulkDocs([
+        {
+          foo: '2',
+          _id: 'foo',
+          _rev: '1-x',
+          _revisions: {start: 1, ids: ['x']}
+        },
+        {
+          foo: '3',
+          _id: 'foo',
+          _rev: '2-y',
+          _deleted: true,
+          _revisions: {start: 2, ids: ['y', 'x']}
+        }
+
+      ], {new_edits: false}).then(function () {
+        return createView(db, {
+          map: function (doc) {
+            emit(doc.foo);
+          }
+        }).then(function (queryFun) {
+          return db.query(queryFun).then(function (res) {
+            res.rows.length.should.equal(0);
+            return db.bulkDocs([
+              {
+                foo: '1',
+                _id: 'foo',
+                _rev: '1-w',
+                _revisions: {start: 1, ids: ['w']}
+              }
+            ], {new_edits: false}).then(function () {
+              return db.query(queryFun);
+            }).then(function (res) {
+              res.rows[0].key.should.equal('1');
+              return db.bulkDocs([
+                {
+                  foo: '4',
+                  _id: 'foo',
+                  _rev: '1-z',
+                  _revisions: {start: 1, ids: ['z']}
+                }
+              ], {new_edits: false});
+            }).then(function () {
+              return db.query(queryFun);
+            }).then(function (res) {
+              res.rows[0].key.should.equal('4');
+            });
+          });
+        });
+      });
+    });
 
     it('Views should include _conflicts', function () {
       var db2name = 'test2' + Math.random();
