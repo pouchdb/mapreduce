@@ -673,16 +673,17 @@ function tests(dbName, dbType, viewType) {
         }).then(function (queryFun) {
           return db.bulkDocs({
             docs: [
-              { val: 2 },
-              { val: [1, 2, 3, 4] },
-              { val: [3, 4] }
+              { _id: '1', val: 2 },
+              { _id: '2', val: [1, 2, 3, 4] },
+              { _id: '3', val: [3, 4] },
+              { _id: '4', val: 1 }
             ]
           }).then(function () {
             return db.query(queryFun, {reduce: true, group: true});
           }).then(function (res) {
             res.should.deep.equal({rows : [{
               key : null,
-              value : [6, 6, 3, 4]
+              value : [7, 6, 3, 4]
             }]});
           });
         });
