@@ -3196,5 +3196,105 @@ function tests(dbName, dbType, viewType) {
         });
       });
     }
+
+    var isNode = typeof window === 'undefined';
+    if (viewType === 'persisted' && dbType === 'local' && isNode) {
+      it('#239 test memdown db', function () {
+        var destroyedDBs = [];
+        Pouch.on('destroyed', function (db) {
+          destroyedDBs.push(db);
+        });
+
+        // make sure prefixed DBs are tied to regular DBs
+        var db = new Pouch(dbName, {db: require('memdown')});
+        return utils.fin(createView(db, {
+          map: function (doc) {
+            emit(doc.name);
+          }
+        }).then(function (queryFun) {
+          return db.post({name: 'foo'}).then(function () {
+            return db.query(queryFun);
+          }).then(function (res) {
+            res.rows.should.have.length(1);
+            res.rows[0].key.should.equal('foo');
+            var ddocId = '_design/' + queryFun.split('/')[0];
+            return db.get(ddocId);
+          }).then(function (ddoc) {
+            return db.remove(ddoc);
+          }).then(function () {
+            return db.viewCleanup();
+          });
+        }), function () {
+          return db.destroy().then(function () {
+            var chain = Pouch.utils.Promise.resolve();
+            // for each of the supposedly destroyed DBs,
+            // check that there isn't a normal DB hanging around
+            destroyedDBs.forEach(function (dbName) {
+              chain = chain.then(function () {
+                var db = new Pouch(dbName);
+                var promise = db.info().then(function (info) {
+                  info.update_seq.should.equal(0);
+                });
+                return utils.fin(promise, function () {
+                  return db.destroy();
+                });
+              });
+            });
+            return chain;
+          }).then(function () {
+            Pouch.removeAllListeners('destroyed');
+          });
+        });
+      });
+
+      it('#239 test prefixed db', function () {
+        var destroyedDBs = [];
+        Pouch.on('destroyed', function (db) {
+          destroyedDBs.push(db);
+        });
+
+        // make sure prefixed DBs are tied to regular DBs
+        var db = new Pouch(dbName, {prefix: 'myprefix_'});
+        return utils.fin(createView(db, {
+          map: function (doc) {
+            emit(doc.name);
+          }
+        }).then(function (queryFun) {
+          return db.post({name: 'foo'}).then(function () {
+            return db.query(queryFun);
+          }).then(function (res) {
+            res.rows.should.have.length(1);
+            res.rows[0].key.should.equal('foo');
+            var ddocId = '_design/' + queryFun.split('/')[0];
+            return db.get(ddocId);
+          }).then(function (ddoc) {
+            return db.remove(ddoc);
+          }).then(function () {
+            return db.viewCleanup();
+          });
+        }), function () {
+          return db.destroy().then(function () {
+            var chain = Pouch.utils.Promise.resolve();
+            // for each of the supposedly destroyed DBs,
+            // check that there isn't a normal DB hanging around
+            destroyedDBs.forEach(function (dbName) {
+              chain = chain.then(function () {
+                var db = new Pouch(dbName);
+                var promise = db.info().then(function (info) {
+                  info.update_seq.should.equal(0);
+                });
+                return utils.fin(promise, function () {
+                  return db.destroy();
+                });
+              });
+            });
+            return chain;
+          }).then(function () {
+            Pouch.removeAllListeners('destroyed');
+          });
+        });
+      });
+    }
+
   });
 }

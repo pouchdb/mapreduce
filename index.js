@@ -672,7 +672,7 @@ var localViewCleanup = utils.sequentialize(mainQueue, function (db) {
         return !viewsToStatus[viewDBName];
       });
       var destroyPromises = dbsToDelete.map(function (viewDBName) {
-        return db.constructor.destroy(viewDBName, {adapter : db.adapter});
+        return db.constructor.destroy(viewDBName, db.__opts);
       });
       return Promise.all(destroyPromises).then(function () {
         return {ok: true};
