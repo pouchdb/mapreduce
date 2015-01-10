@@ -225,11 +225,11 @@ function httpQuery(db, fun, opts) {
   // We are referencing a query defined in the design doc
   if (typeof fun === 'string') {
     var parts = parseViewName(fun);
-    return db.request({
+    return db.request(utils.extend(true, utils.clone(opts.ajax || {}), {
       method: method,
       url: '_design/' + parts[0] + '/_view/' + parts[1] + params,
       body: body
-    });
+    }));
   }
 
   // We are using a temporary view, terrible for performance but good for testing
@@ -241,11 +241,11 @@ function httpQuery(db, fun, opts) {
       body[key] = fun[key].toString();
     }
   });
-  return db.request({
+  return db.request(utils.extend(true, utils.clone(opts.ajax || {}), {
     method: 'POST',
     url: '_temp_view' + params,
     body: body
-  });
+  }));
 }
 
 function defaultsTo(value) {
@@ -627,11 +627,11 @@ var queryView = utils.sequentialize(mainQueue, function (view, opts) {
   }
 });
 
-function httpViewCleanup(db) {
-  return db.request({
+function httpViewCleanup(db, opts) {
+  return db.request(utils.extend(true, utils.clone(opts.ajax || {}), {
     method: 'POST',
     url: '_view_cleanup'
-  });
+  }));
 }
 
 var localViewCleanup = utils.sequentialize(mainQueue, function (db) {
@@ -681,10 +681,11 @@ var localViewCleanup = utils.sequentialize(mainQueue, function (db) {
   }, defaultsTo({ok: true}));
 });
 
-exports.viewCleanup = utils.callbackify(function () {
+exports.viewCleanup = utils.callbackify(function (opts) {
   var db = this;
+  opts = opts || {};
   if (db.type() === 'http') {
-    return httpViewCleanup(db);
+    return httpViewCleanup(db, opts);
   }
   return localViewCleanup(db);
 });
