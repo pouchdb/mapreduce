@@ -10,6 +10,7 @@ module.exports = function (opts) {
   var mapFun = opts.map;
   var reduceFun = opts.reduce;
   var temporary = opts.temporary;
+  var pluginName = opts.pluginName;
 
   // the "undefined" part is for backwards compatibility
   var viewSignature = mapFun.toString() + (reduceFun && reduceFun.toString()) +
@@ -43,7 +44,7 @@ module.exports = function (opts) {
       depDbs[depDbName] = true;
       return doc;
     }
-    return upsert(sourceDB, '_local/mrviews', diffFunction).then(function () {
+    return upsert(sourceDB, '_local/' + pluginName, diffFunction).then(function () {
       return sourceDB.registerDependentDatabase(depDbName).then(function (res) {
         var db = res.db;
         db.auto_compaction = true;

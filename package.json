@@ -1,11 +1,11 @@
 {
-  "name": "pouchdb-mapreduce",
-  "version": "2.3.0",
-  "description": "Map Reduce =====",
+  "name": "pouchdb-abstract-mapreduce",
+  "version": "0.1.0",
+  "description": "Abstract mapreduce =====",
   "main": "index.js",
   "repository": {
     "type": "git",
-    "url": "git://github.com/pouchdb/mapreduce.git"
+    "url": "git://github.com/nolanlawson/pouchdb-abstract-mapreduce.git"
   },
   "scripts": {
     "test-for-coverage": "TEST_DB=testdb,http://localhost:5984/testdb istanbul test ./node_modules/mocha/bin/_mocha test/test.js",
@@ -28,7 +28,7 @@
   "author": "",
   "license": "Apache",
   "bugs": {
-    "url": "https://github.com/pouchdb/mapreduce/issues"
+    "url": "https://github.com/nolanlawson/pouchdb-abstract-mapreduce/issues"
   },
   "dependencies": {
     "argsarray": "0.0.1",
