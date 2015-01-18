@@ -127,9 +127,9 @@ function defaultsTo(value) {
 function createIndexer(def) {
 
   var pluginName = def.name;
-  var runMap = def.mapper;
-  var runReduce = def.reducer;
-  var validateDdoc = def.ddocValidator;
+  var mapper = def.mapper;
+  var reducer = def.reducer;
+  var ddocValidator = def.ddocValidator;
 
   // returns a promise for a list of docs to update, based on the input docId.
   // we update the metaDoc first (i.e. the doc that points from the sourceDB
@@ -249,7 +249,7 @@ function createIndexer(def) {
       mapResults.push(output);
     }
 
-    var mapFun = runMap(view.sourceDB, view.mapFun, emit);
+    var mapFun = mapper(view.sourceDB, view.mapFun, emit);
 
     var currentSeq = view.seq || 0;
 
@@ -332,7 +332,7 @@ function createIndexer(def) {
 
     var shouldGroup = options.group || options.group_level;
 
-    var reduceFun = runReduce(view.reduceFun);
+    var reduceFun = reducer(view.reduceFun);
 
     var groups = [];
     var lvl = options.group_level;
@@ -593,7 +593,7 @@ function createIndexer(def) {
           viewName);
         }
 
-        validateDdoc(doc);
+        ddocValidator(doc);
         checkQueryParseError(opts, fun);
 
         var createViewOpts = {
@@ -629,7 +629,7 @@ function createIndexer(def) {
     }
     opts = utils.extend(true, {}, opts);
 
-    if (typeof fun !== 'object') {
+    if (typeof fun === 'function') {
       fun = {map : fun};
     }
 
