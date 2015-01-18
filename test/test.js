@@ -54,7 +54,7 @@ describe('upsert', function () {
       }
     }, 'foo', function () {
       return false;
-    }).should.become('lalala');
+    }).should.be.fulfilled;
   });
   it('should error if it can\'t put', function () {
     return upsert({
