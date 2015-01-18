@@ -1,6 +1,6 @@
 {
   "name": "pouchdb-abstract-mapreduce",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Abstract mapreduce =====",
   "main": "index.js",
   "repository": {
