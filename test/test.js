@@ -3,7 +3,7 @@
 'use strict';
 
 var Pouch = require('pouchdb');
-var Mapreduce = require('../');
+var Mapreduce = require('pouchdb-mapreduce');
 Pouch.plugin(Mapreduce);
 var chai = require('chai');
 var should = chai.should();

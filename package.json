@@ -51,12 +51,13 @@
     "memdown": "^1.0.0",
     "mocha": "~1.18",
     "phantomjs": "^1.9.7-5",
-    "pouchdb": "pouchdb/pouchdb",
     "pouchdb-http-proxy": "~0.10.3",
     "request": "^2.34.0",
     "sauce-connect-launcher": "^0.4.2",
     "watchify": "~0.4.1",
-    "wd": "^0.2.21"
+    "wd": "^0.2.21",
+    "pouchdb-mapreduce": "pouchdb/mapreduce#abstractify",
+    "pouchdb": "pouchdb/pouchdb"
   },
   "browser": {
     "crypto": false
