@@ -1,9 +1,14 @@
-Map Reduce
+Abstract Map Reduce
 =====
 
-[![Build Status](https://travis-ci.org/pouchdb/mapreduce.svg)](https://travis-ci.org/pouchdb/mapreduce)
+[![Build Status](https://travis-ci.org/nolanlawson/pouchdb-abstract-mapreduce.svg)](https://travis-ci.org/nolanlawson/pouchdb-abstract-mapreduce)
 
-Map/reduce plugin pulled out of PouchDB.  A PouchDB plugin that, like [PouchDB Collate](https://github.com/pouchdb/collate), is bundled directly with PouchDB.
+Abstract map/reduce functions pulled out of the PouchDB map/reduce plugin.  Designed to be used for:
+
+* map/reduce
+* geo queries
+* full-text search queries
+* pouchdb-indexes (aka Mango queries, aka Cloudant Query Language)
 
 Building
 ----
@@ -13,6 +18,13 @@ Building
 
 Testing
 ----
+
+**Warning:** to really test your current working copy, you should link `pouchdb-mapreduce` to its parent module:
+
+```bash
+rm -fr node_modules/pouchdb-mapreduce/node_modules/pouchdb-abstract-mapreduce
+ln -s ../../.. node_modules/pouchdb-mapreduce/node_modules/pouchdb-abstract-mapreduce
+```
 
 ### In Node
 
