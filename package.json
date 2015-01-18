@@ -37,6 +37,7 @@
     "lie": "^2.6.0",
     "pouchdb-collate": "^1.2.0",
     "pouchdb-extend": "^0.1.0",
+    "pouchdb-upsert": "^1.0.2",
     "spark-md5": "0.0.5"
   },
   "devDependencies": {
