@@ -621,7 +621,7 @@ function createIndexer(def) {
     }
   }
 
-  var query = function(fun, opts, callback) {
+  var query = function (fun, opts, callback) {
 
     if (1 === 0) {
       throw new Error('yo!');
