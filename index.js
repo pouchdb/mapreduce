@@ -589,7 +589,7 @@ function createIndexer(def) {
         var fun = doc.views && doc.views[viewName];
 
         if (!fun || typeof fun.map !== 'string') {
-          throw new NotFoundError('ddoc ' + ddoc._id + ' has no view named ' +
+          throw new NotFoundError('ddoc ' + doc._id + ' has no view named ' +
           viewName);
         }
 
