@@ -249,7 +249,7 @@ function createIndexer(def) {
       mapResults.push(output);
     }
 
-    var mapFun = mapper(view.sourceDB, view.mapFun, emit);
+    var mapFun = mapper(view.mapFun, emit);
 
     var currentSeq = view.seq || 0;
 
