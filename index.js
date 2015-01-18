@@ -31,6 +31,18 @@ function QueryParseError(message) {
 
 utils.inherits(QueryParseError, Error);
 
+function NotFoundError(message) {
+  this.status = 404;
+  this.name = 'not_found';
+  this.message = message;
+  this.error = true;
+  try {
+    Error.captureStackTrace(this, NotFoundError);
+  } catch (e) {}
+}
+
+utils.inherits(NotFoundError, Error);
+
 function parseViewName(name) {
   // can be either 'ddocname/viewname' or just 'viewname'
   // (where the ddoc name is the same)
@@ -574,9 +586,14 @@ function createIndexer(def) {
       var designDocName = parts[0];
       var viewName = parts[1];
       return db.get('_design/' + designDocName).then(function (doc) {
-        validateDdoc(doc);
         var fun = doc.views && doc.views[viewName];
 
+        if (!fun || typeof fun.map !== 'string') {
+          throw new NotFoundError('ddoc ' + ddoc._id + ' has no view named ' +
+          viewName);
+        }
+
+        validateDdoc(doc);
         checkQueryParseError(opts, fun);
 
         var createViewOpts = {
