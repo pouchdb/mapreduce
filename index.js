@@ -588,12 +588,13 @@ function createIndexer(def) {
       return db.get('_design/' + designDocName).then(function (doc) {
         var fun = doc.views && doc.views[viewName];
 
-        if (!fun || typeof fun.map !== 'string') {
+        if (!fun) {
+          // basic validator; it's assumed that every subclass would want this
           throw new NotFoundError('ddoc ' + doc._id + ' has no view named ' +
-          viewName);
+            viewName);
         }
 
-        ddocValidator(doc);
+        ddocValidator(doc, viewName);
         checkQueryParseError(opts, fun);
 
         var createViewOpts = {
