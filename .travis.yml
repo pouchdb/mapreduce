@@ -28,6 +28,13 @@ after_failure:
 env:
   matrix:
   - COMMAND=test
+  - SERVER=pouchdb-server COMMAND=test
   - CLIENT=selenium:firefox COMMAND=test
   - CLIENT=selenium:phantomjs COMMAND=test
   - COMMAND=coverage
+
+
+matrix:
+  allow_failures:
+  - env: SERVER=pouchdb-server COMMAND=test
+  fast_finish: true
