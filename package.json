@@ -9,7 +9,7 @@
   },
   "scripts": {
     "test-for-coverage": "TEST_DB=testdb,http://localhost:5984/testdb istanbul test ./node_modules/mocha/bin/_mocha test/test.js",
-    "test-node": "TEST_DB=testdb,http://localhost:5984/testdb mocha --reporter=spec --grep=$GREP test/test.js",
+    "test-node": "./bin/test-node.sh",
     "test-browser": "./bin/test-browser.js",
     "jshint": "jshint -c .jshintrc *.js test/test.js",
     "test": "npm run jshint && ./bin/run-test.sh",
@@ -53,6 +53,7 @@
     "phantomjs": "^1.9.7-5",
     "pouchdb": "pouchdb/pouchdb",
     "pouchdb-http-proxy": "~0.10.3",
+    "pouchdb-server": "^0.6.4",
     "request": "^2.34.0",
     "sauce-connect-launcher": "^0.4.2",
     "watchify": "~0.4.1",

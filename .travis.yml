@@ -22,12 +22,23 @@ before_script:
   - "curl -X GET http://127.0.0.1:5984/"
   - "curl -X PUT http://127.0.0.1:5984/_config/log/level -d '\"debug\"'"
 
+    # pouchdb-server setup
+  - "rm -rf node_modules/pouchdb-server/node_modules/pouchdb/node_modules/mapreduce"
+  - "ln -s ../../../../.. node_modules/pouchdb-server/node_modules/pouchdb/node_modules/mapreduce"
+
 after_failure:
   - "curl -X GET http://127.0.0.1:5984/_log?bytes=1000000"
 
 env:
   matrix:
   - COMMAND=test
+  - SERVER=pouchdb-server COMMAND=test
   - CLIENT=selenium:firefox COMMAND=test
   - CLIENT=selenium:phantomjs COMMAND=test
   - COMMAND=coverage
+
+
+matrix:
+  allow_failures:
+  - env: SERVER=pouchdb-server COMMAND=test
+  fast_finish: true
