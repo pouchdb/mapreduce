@@ -8,7 +8,7 @@
     "url": "git://github.com/pouchdb/mapreduce.git"
   },
   "scripts": {
-    "test-for-coverage": "TEST_DB=testdb,http://localhost:5984/testdb istanbul test ./node_modules/mocha/bin/_mocha test/test.js",
+    "test-for-coverage": "mkdir -p ./testdata/client && TEST_DB=./testdata/client/testdb,http://localhost:5984/testdb istanbul test ./node_modules/mocha/bin/_mocha test/test.js",
     "test-node": "./bin/test-node.sh",
     "test-browser": "./bin/test-browser.js",
     "jshint": "jshint -c .jshintrc *.js test/test.js",
