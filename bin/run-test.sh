@@ -4,6 +4,11 @@
 
 if [ "$SERVER" == "pouchdb-server" ]; then
     mkdir -p ./testdata/server
+    if [ "$TRAVIS_REPO_SLUG" == "pouchdb/mapreduce" ]; then
+      # pouchdb-server setup
+      rm -rf node_modules/pouchdb-server/node_modules/pouchdb/node_modules/mapreduce
+      ln -s ../../../../.. node_modules/pouchdb-server/node_modules/pouchdb/node_modules/mapreduce
+    fi
     echo '{
         "httpd": {
             "port": 5985
