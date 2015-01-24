@@ -1068,6 +1068,60 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
+    it('Test unsafe object usage (#244)', function () {
+      var db = new Pouch(dbName);
+      return db.bulkDocs([
+        {_id: 'constructor'}
+      ]).then(function (res) {
+        var rev = res[0].rev;
+        return createView(db, {
+          map: function (doc) {
+            emit(doc._id);
+          }
+        }).then(function (queryFun) {
+          return db.query(queryFun, {include_docs: true}).then(function (res) {
+            res.rows.should.deep.equal([
+              {
+                "key": "constructor",
+                "id": "constructor",
+                "value": null,
+                "doc": {
+                  "_id": "constructor",
+                  "_rev": rev
+                }
+              }
+            ]);
+            return db.bulkDocs([
+              {_id: 'constructor', _rev: rev}
+            ]);
+          }).then(function (res) {
+            rev = res[0].rev;
+            return db.query(queryFun, {include_docs: true});
+          }).then(function (res) {
+            res.rows.should.deep.equal([
+              {
+                "key": "constructor",
+                "id": "constructor",
+                "value": null,
+                "doc": {
+                  "_id": "constructor",
+                  "_rev": rev
+                }
+              }
+            ]);
+            return db.bulkDocs([
+              {_id: 'constructor', _rev: rev, _deleted: true}
+            ]);
+          }).then(function (res) {
+            rev = res[0].rev;
+            return db.query(queryFun, {include_docs: true});
+          }).then(function (res) {
+            res.rows.should.deep.equal([]);
+          });
+        });
+      });
+    });
+
     it("Test view querying with a skip option and reduce", function () {
       return new Pouch(dbName).then(function (db) {
         return createView(db, {
