@@ -196,37 +196,6 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
-    if (viewType === 'persisted') {
-
-      it('test update_after race', function () {
-        var db = new Pouch(dbName);
-
-        return db.bulkDocs([
-          {_id: 'hey'},
-          {_id: 'yo'}
-        ]).then(function () {
-          var ddoc = {
-            _id: '_design/myview',
-            views: {
-              myview: {
-                map: function (doc) {
-                  emit(doc._id);
-                }.toString()
-              }
-            }
-          };
-          return db.put(ddoc);
-        }).then(function () {
-          for (var i = 0; i < 3; i++) {
-            db.query('myview', {
-              limit: 0,
-              stale: 'update_after'
-            });
-          }
-        });
-      });
-    }
-
     if (dbType === 'local' && viewType === 'temp') {
       it("with a closure", function () {
         return new Pouch(dbName).then(function (db) {
