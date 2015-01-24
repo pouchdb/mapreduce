@@ -716,7 +716,7 @@ function localViewCleanup(db) {
       });
       var destroyPromises = dbsToDelete.map(function (viewDBName) {
         return utils.sequentialize(getQueue(viewDBName), function () {
-          return db.constructor.destroy(viewDBName, db.__opts);
+          return new db.constructor(viewDBName, db.__opts).destroy();
         })();
       });
       return Promise.all(destroyPromises).then(function () {
