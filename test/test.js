@@ -131,8 +131,9 @@ function tests(dbName, dbType, viewType) {
     return new Pouch(dbName);
   });
   afterEach(function () {
-    return Pouch.destroy(dbName);
+    return new Pouch(dbName).destroy();
   });
+
   describe('views', function () {
     it("Test basic view", function () {
       return new Pouch(dbName).then(function (db) {
@@ -706,7 +707,7 @@ function tests(dbName, dbType, viewType) {
     it('Query result should include _conflicts', function () {
       var db2name = 'test2b' + Math.random();
       var cleanup = function () {
-        return Pouch.destroy(db2name);
+        return new Pouch(db2name).destroy();
       };
       var doc1 = {_id: '1', foo: 'bar'};
       var doc2 = {_id: '1', foo: 'baz'};
@@ -926,7 +927,7 @@ function tests(dbName, dbType, viewType) {
     it('Views should include _conflicts', function () {
       var db2name = 'test2' + Math.random();
       var cleanup = function () {
-        return Pouch.destroy(db2name);
+        return new Pouch(db2name).destroy();
       };
       var doc1 = {_id: '1', foo: 'bar'};
       var doc2 = {_id: '1', foo: 'baz'};
@@ -2367,11 +2368,11 @@ function tests(dbName, dbType, viewType) {
                   'foobar'
                 ], 'test db2');
               }).catch(function (err) {
-                return Pouch.destroy('local-other').then(function () {
+                return new Pouch('local-other').destroy().then(function () {
                   throw err;
                 });
               }).then(function () {
-                return Pouch.destroy('local-other');
+                return new Pouch('local-other').destroy();
               });
             });
           });
