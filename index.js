@@ -453,7 +453,7 @@ function updateViewInQueue(view) {
             for (var j = 0, jl = mapResults.length; j < jl; j++) {
               var obj = mapResults[j];
               var complexKey = [obj.key, obj.id];
-              if (obj.key === lastKey) {
+              if (collate(obj.key, lastKey)===0) {
                 complexKey.push(j); // dup key+id, so make it unique
               }
               var indexableKey = toIndexableString(complexKey);
