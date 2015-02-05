@@ -1606,8 +1606,8 @@ function tests(dbName, dbType, viewType) {
         return createView(db, {
           map : function (doc) {
             emit(doc.foo);
-            emit(doc.foo);
             emit(doc.bar);
+            emit(doc.foo);
             emit(doc.bar, 'multiple values!');
             emit(doc.bar, 'crazy!');
           }
@@ -1654,6 +1654,34 @@ function tests(dbName, dbType, viewType) {
           data.rows[9].key.should.equal('bar');
           data.rows[9].id.should.equal('doc2');
           data.rows[9].value.should.equal('multiple values!');
+        });
+      });
+    });
+    it('Testing multiple emissions (complex keys)', function () {
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map: function (doc) {
+            emit(['a'], 1);
+            emit(['b'], 3);
+            emit(['a'], 2);
+            doc;
+          }
+        }).then(function (mapFunction) {
+          return db.bulkDocs({
+            docs: [
+              {_id: 'doc1', foo: 'foo', bar: 'bar'}
+            ]
+          }).then(function () {
+            return db.query(mapFunction);
+          });
+        }).then(function (data) {
+          data.rows.should.have.length(3);
+          data.rows[0].key.should.eql(['a']);
+          data.rows[0].value.should.equal(1);
+          data.rows[1].key.should.eql(['a']);
+          data.rows[1].value.should.equal(2);
+          data.rows[2].key.should.eql(['b']);
+          data.rows[2].value.should.equal(3);
         });
       });
     });
