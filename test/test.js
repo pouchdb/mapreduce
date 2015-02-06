@@ -1675,7 +1675,7 @@ function tests(dbName, dbType, viewType) {
             return db.query(mapFunction);
           });
         }).then(function (data) {
-          data.rows.should.have.length(3);
+          data.rows.should.have.length(4);
           data.rows[0].key.should.eql(['a']);
           data.rows[0].value.should.equal(1);
           data.rows[1].key.should.eql(['a']);
