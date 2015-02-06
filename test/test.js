@@ -1657,23 +1657,24 @@ function tests(dbName, dbType, viewType) {
         });
       });
     });
-    it('Testing multiple emissions (complex keys)', function(){
-      return new Pouch(dbName).then(function(db){
-        return createView(db,{
-          map:function(doc){
-            emit(['a'],1)
-            emit(['b'],3)
-            emit(['a'],2)
+    it('Testing multiple emissions (complex keys)', function () {
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map: function (doc) {
+            emit(['a'], 1);
+            emit(['b'], 3);
+            emit(['a'], 2);
+            emit(doc.foo, doc.bar);
           }
-        }).then(function(mapFunction){
+        }).then(function (mapFunction) {
           return db.bulkDocs({
-            docs:[
-              {_id:'doc1',foo:'foo',bar:'bar'}
+            docs: [
+              {_id: 'doc1', foo: 'foo', bar: 'bar'}
             ]
-          }).then(function(){
+          }).then(function () {
             return db.query(mapFunction);
-          })
-        }).then(function(data){
+          });
+        }).then(function (data) {
           data.rows.should.have.length(3);
           data.rows[0].key.should.eql(['a']);
           data.rows[0].value.should.equal(1);
