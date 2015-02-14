@@ -3207,6 +3207,50 @@ function tests(dbName, dbType, viewType) {
       });
     });
 
+    it('should continue indexing when map eval fails (#214)', function () {
+      return new Pouch(dbName).then(function (db) {
+        var err;
+        db.on('error', err214);
+        return createView(db, {
+          map: function (doc) {
+            emit(doc.foo.bar, doc);
+          }
+        }).then(function (view) {
+          return db.bulkDocs({docs: [
+            {  
+              foo: {
+                bar: "foobar"
+              }
+            },
+            { notfoo: "thisWillThrow" },
+            {
+              foo: {
+                bar: "otherFoobar"
+              }
+            }
+          ]}).then(function () {
+            return db.query(view);
+          }).then(function (res) {
+            if (dbType === 'local') {
+              should.exist(err);
+            }
+            res.rows.should.have.length(2, 'Ignore the wrongly formatted doc');
+
+            err = undefined;
+            db.removeListener('error', err214);
+            return db.query(view);
+          }).then(function (res) {
+            should.not.exist(err);
+            res.rows.should.have.length(2, 'Ignore the wrongly formatted doc');
+          });
+
+        });
+        function err214(e) { 
+          err = e;
+        }
+      });
+    });
+
     it('should update the emitted value', function () {
       this.timeout(30000);
       return new Pouch(dbName).then(function (db) {
