@@ -3231,7 +3231,9 @@ function tests(dbName, dbType, viewType) {
           ]}).then(function () {
             return db.query(view);
           }).then(function (res) {
-            should.exist(err);
+            if (dbType === 'local') {
+              should.exist(err);
+            }
             res.rows.should.have.length(2, 'Ignore the wrongly formatted doc');
 
             err = undefined;
