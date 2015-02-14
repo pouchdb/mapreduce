@@ -373,8 +373,19 @@ function getQueue(view) {
 }
 
 function updateView(view) {
+  view.sourceDB.on('error', onSourceDbError);
+
+  function onSourceDbError() {
+    // (#214) do nothing. If there's no err listener on 
+    // the source db, the view process hangs.
+  }
+
   return utils.sequentialize(getQueue(view), function () {
-    return updateViewInQueue(view);
+    return updateViewInQueue(view).then(function () {
+      view.sourceDB.removeListener('error', onSourceDbError);
+    }).catch(function () {
+      view.sourceDB.removeListener('error', onSourceDbError);
+    });
   })();
 }
 
@@ -382,7 +393,7 @@ function updateViewInQueue(view) {
   // bind the emit function once
   var mapResults;
   var doc;
-
+  
   function emit(key, value) {
     var output = {id: doc._id, key: normalizeKey(key)};
     // Don't explicitly store the value unless it's defined and non-null.
@@ -477,6 +488,7 @@ function updateViewInQueue(view) {
       function onError(err) {
         reject(err);
       }
+
     }
 
     processNextBatch();
