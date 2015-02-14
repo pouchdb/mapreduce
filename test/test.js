@@ -3209,6 +3209,8 @@ function tests(dbName, dbType, viewType) {
 
     it('should continue indexing when map eval fails (#214)', function () {
       return new Pouch(dbName).then(function (db) {
+        var err;
+        db.on('error', err214);
         return createView(db, {
           map: function (doc) {
             emit(doc.foo.bar, doc);
@@ -3229,9 +3231,21 @@ function tests(dbName, dbType, viewType) {
           ]}).then(function () {
             return db.query(view);
           }).then(function (res) {
+            should.exist(err);
+            res.rows.should.have.length(2, 'Ignore the wrongly formatted doc');
+
+            err = undefined;
+            db.removeListener('error', err214);
+            return db.query(view);
+          }).then(function (res) {
+            should.not.exist(err);
             res.rows.should.have.length(2, 'Ignore the wrongly formatted doc');
           });
+
         });
+        function err214(e) { 
+          err = e;
+        }
       });
     });
 
