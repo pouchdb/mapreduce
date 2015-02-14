@@ -1253,7 +1253,7 @@ function tests(dbName, dbType, viewType) {
       });
 
       it('many simultaneous persisted views', function () {
-        this.timeout(30000);
+        this.timeout(90000);
         var db = new Pouch(dbName);
 
         var views = [];
@@ -3210,7 +3210,9 @@ function tests(dbName, dbType, viewType) {
     it('should continue indexing when map eval fails (#214)', function () {
       return new Pouch(dbName).then(function (db) {
         var err;
-        db.on('error', err214);
+        db.on('error', function (e) {
+          err = e;
+        });
         return createView(db, {
           map: function (doc) {
             emit(doc.foo.bar, doc);
@@ -3235,19 +3237,45 @@ function tests(dbName, dbType, viewType) {
               should.exist(err);
             }
             res.rows.should.have.length(2, 'Ignore the wrongly formatted doc');
-
-            err = undefined;
-            db.removeListener('error', err214);
             return db.query(view);
           }).then(function (res) {
-            should.not.exist(err);
             res.rows.should.have.length(2, 'Ignore the wrongly formatted doc');
           });
 
         });
-        function err214(e) { 
-          err = e;
-        }
+      });
+    });
+
+    it('should continue indexing when map eval fails, ' +
+        'even without a listener (#214)', function () {
+      return new Pouch(dbName).then(function (db) {
+        return createView(db, {
+          map: function (doc) {
+            emit(doc.foo.bar, doc);
+          }
+        }).then(function (view) {
+          return db.bulkDocs({docs: [
+            {
+              foo: {
+                bar: "foobar"
+              }
+            },
+            { notfoo: "thisWillThrow" },
+            {
+              foo: {
+                bar: "otherFoobar"
+              }
+            }
+          ]}).then(function () {
+            return db.query(view);
+          }).then(function (res) {
+            res.rows.should.have.length(2, 'Ignore the wrongly formatted doc');
+            return db.query(view);
+          }).then(function (res) {
+            res.rows.should.have.length(2, 'Ignore the wrongly formatted doc');
+          });
+
+        });
       });
     });
 
