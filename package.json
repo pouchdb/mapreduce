@@ -1,7 +1,7 @@
 {
   "name": "pouchdb-mapreduce",
-  "version": "2.3.2",
-  "description": "Map Reduce =====",
+  "version": "2.3.3",
+  "description": "PouchDB map/reduce",
   "main": "index.js",
   "repository": {
     "type": "git",
