@@ -9,6 +9,7 @@ var chai = require('chai');
 var should = chai.should();
 chai.use(require("chai-as-promised"));
 var Promise = require('bluebird');
+var path = require('path');
 var upsert = require('../upsert');
 var utils = require('../utils');
 var all = Promise.all;
@@ -3556,7 +3557,9 @@ function tests(dbName, dbType, viewType) {
         });
 
         // make sure prefixed DBs are tied to regular DBs
-        var db = new Pouch(dbName, {prefix: 'myprefix_'});
+        var dbBaseName = path.basename(dbName);
+        var prefix = path.dirname(dbName) + '/myprefix_';
+        var db = new Pouch(dbBaseName, {prefix: prefix});
         return utils.fin(createView(db, {
           map: function (doc) {
             emit(doc.name);
