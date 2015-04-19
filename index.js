@@ -265,6 +265,32 @@ function httpQuery(db, fun, opts) {
   });
 }
 
+// custom adapters can define their own api._query
+// and override the default behavior
+function customQuery(db, fun, opts) {
+  return new Promise(function (resolve, reject) {
+    db._query(fun, opts, function (err, res) {
+      if (err) {
+        return reject(err);
+      }
+      resolve(res);
+    });
+  });
+}
+
+// custom adapters can define their own api._viewCleanup
+// and override the default behavior
+function customViewCleanup(db) {
+  return new Promise(function (resolve, reject) {
+    db._viewCleanup(function (err, res) {
+      if (err) {
+        return reject(err);
+      }
+      resolve(res);
+    });
+  });
+}
+
 function defaultsTo(value) {
   return function (reason) {
     /* istanbul ignore else */
@@ -745,6 +771,8 @@ exports.viewCleanup = utils.callbackify(function () {
   var db = this;
   if (db.type() === 'http') {
     return httpViewCleanup(db);
+  } else if (typeof db._viewCleanup === 'function') {
+    return customViewCleanup(db);
   }
   return localViewCleanup(db);
 });
@@ -752,6 +780,8 @@ exports.viewCleanup = utils.callbackify(function () {
 function queryPromised(db, fun, opts) {
   if (db.type() === 'http') {
     return httpQuery(db, fun, opts);
+  } else if (typeof db._query === 'function') {
+    return customQuery(db, fun, opts);
   }
 
   if (typeof fun !== 'string') {
