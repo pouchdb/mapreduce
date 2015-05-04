@@ -417,9 +417,26 @@ function updateViewInQueue(view) {
 
   var currentSeq = view.seq || 0;
 
+  /* istanbul ignore next */
+  var errored = false;
+
   function processChange(docIdsToChangesAndEmits, seq) {
     return function () {
-      return saveKeyValues(view, docIdsToChangesAndEmits, seq);
+      /* istanbul ignore next */
+      if (errored) {
+        // bail out; the database is being destroyed
+        return Promise.resolve();
+      }
+      var promise = saveKeyValues(view, docIdsToChangesAndEmits, seq);
+
+      /* istanbul ignore next */
+      promise = promise.catch(function (err) {
+        // unexpected error, e.g. the database is closing/destroyed
+        console.log('unexpected map/reduce error', err);
+        errored = true;
+      });
+
+      return promise;
     };
   }
 
