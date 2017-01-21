@@ -20,6 +20,16 @@ var persistentQueues = {};
 var tempViewQueue = new TaskQueue();
 var CHANGES_BATCH_SIZE = 50;
 
+var coffee;
+try {
+  coffee = require('coffee-script');
+}
+catch (e) {
+  if (typeof window !== 'undefined' && window.CoffeeScript) {
+    coffee = window.CoffeeScript;
+  }
+}
+
 function parseViewName(name) {
   // can be either 'ddocname/viewname' or just 'viewname'
   // (where the ddoc name is the same)
@@ -791,6 +801,19 @@ function queryPromised(db, fun, opts) {
       }
       checkQueryParseError(opts, fun);
 
+      if (doc.language === 'coffeescript' && coffee) {
+        if (typeof fun.map === 'string') {
+          fun.map = coffee.compile(fun.map, {bare: true});
+        }
+        if (typeof fun.reduce === 'string') {
+          fun.reduce = coffee.compile(fun.reduce, {bare: true});
+        }
+      }
+      else if (doc.language && doc.language !== 'javascript') {
+        throw new NotSupportedError('view language ' + doc.language +
+          ' is not supported')
+      }
+
       var createViewOpts = {
         db : db,
         viewName : fullViewName,
@@ -845,6 +868,18 @@ function QueryParseError(message) {
 }
 
 utils.inherits(QueryParseError, Error);
+
+function NotSupportedError(message) {
+  this.status = 500;
+  this.name = 'not_supported_error';
+  this.message = message;
+  this.error = true;
+  try {
+    Error.captureStackTrace(this, NotSupportedError);
+  } catch (e) {}
+}
+
+utils.inherits(NotSupportedError, Error);
 
 function NotFoundError(message) {
   this.status = 404;
