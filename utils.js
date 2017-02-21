@@ -1,5 +1,5 @@
 'use strict';
-/* istanbul ignore if */
+/* istanbul ignore next */
 if (typeof global.Promise === 'function') {
   exports.Promise = global.Promise;
 } else {

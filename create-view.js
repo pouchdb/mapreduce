@@ -65,9 +65,6 @@ module.exports = function (opts) {
           if (!temporary) {
             sourceDB._cachedViews = sourceDB._cachedViews || {};
             sourceDB._cachedViews[viewSignature] = view;
-            view.db.on('destroyed', function () {
-              delete sourceDB._cachedViews[viewSignature];
-            });
           }
           return view;
         });
